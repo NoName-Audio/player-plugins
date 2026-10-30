@@ -1,0 +1,8 @@
+node_modules/
+*.player-plugin
+.DS_Store
+**/.gradle/
+**/build/
+**/target/
+**/local.properties
+*.log
