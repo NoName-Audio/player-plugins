@@ -1,43 +1,43 @@
 # Soulseek
 
-Встроенный пакет `player.soulseek`: поиск музыки, предпрослушивание,
-сохранение в библиотеку и поиск замены трека. Платформы: macOS, Windows, Linux, Android.
+Bundled package `player.soulseek` provides music search, preview, library imports,
+and track replacement. Platforms: macOS, Windows, Linux, and Android.
 
-## Файлы
+## Files
 
-| Файл | Назначение |
+| File | Purpose |
 | --- | --- |
-| [plugin.json](plugin.json) | Права, настройки, поиск, track-action, внутренняя страница и player-widget |
-| [main.js](main.js) | UI подключения, поиск, курсоры результатов, обложки и намерения загрузки |
-| [assets/README.md](assets/README.md) | Происхождение логотипа |
-| [assets/soulseek.png](assets/soulseek.png) | Исходный PNG, встроенный data URL в manifest |
+| [plugin.json](plugin.json) | Permissions, settings, search, track action, internal page, and player widget |
+| [main.js](main.js) | Connection UI, search, result cursors, covers, and transfer intentions |
+| [assets/README.md](assets/README.md) | Logo attribution |
+| [assets/soulseek.png](assets/soulseek.png) | Source PNG embedded as a data URL in the manifest |
 
-## Встраивание в плеер
+## Player contributions
 
-| Вклад | Назначение |
+| Contribution | Purpose |
 | --- | --- |
-| `connection` / `settings` | Имя пользователя и пароль |
-| `search` / `search` | Провайдер общего поиска |
-| `replacement` / `page` | Внутренняя страница поиска другой версии, скрытая из бокового меню |
-| `find-replacement` / `track-action` | Действие Find another version в контекстном меню трека |
-| `buffer` / `player-widget` | Состояние Soulseek в `player.status` |
+| `connection` / `settings` | Username and password |
+| `search` / `search` | Global search provider |
+| `replacement` / `page` | Internal replacement search page, hidden from the sidebar |
+| `find-replacement` / `track-action` | Find another version in a track's context menu |
+| `buffer` / `player-widget` | Soulseek state in `player.status` |
 
-`main.js` вызывает API `soulseek.*`, отслеживает события передач и передаёт
-воспроизведение основному координатору Player. Намерения preview/save сохраняются
-в настройках с поколением активации, чтобы восстановить работу после reload Worker.
-Пароль хранится через `secrets`, а не обычный settings JSON.
+`main.js` calls the `soulseek.*` API, follows transfer events, and delegates playback
+to Player's main coordinator. Preview/save intentions are stored in settings with
+an activation generation so they can be restored after a Worker reload.
+Passwords use `secrets`, not ordinary settings JSON.
 
-Соединение с сетью Soulseek и загрузки реализованы в
-[Rust-адаптере Player](https://github.com/verncat/player/blob/feat/plugins/src-tauri/src/plugins/soulseek.rs).
-Пакет запрашивает `ui`, `settings`, `secrets`, `playback.read`, `playback.control`,
-`native.soulseek`, `library.import`, `library.replace`.
+Soulseek network connections and transfers are implemented in
+[Player's Rust adapter](https://github.com/verncat/player/blob/feat/plugins/src-tauri/src/plugins/soulseek.rs).
+The package requests `ui`, `settings`, `secrets`, `playback.read`, `playback.control`,
+`native.soulseek`, `library.import`, and `library.replace`.
 
-## Проверка и обновление
+## Testing and updates
 
-Из корня player-plugins запустите `pnpm test`. В репозитории Player `pnpm test:plugins`
-проверяет поиск, восстановление намерений, preview/import и переход из меню трека.
-Живое соединение требует отдельной проверки с учётной записью Soulseek.
-Пакет встроенный: обновляется через [submodule Player](../docs/tooling.md#связь-с-player),
-а не установкой внешнего `.player-plugin` с тем же зарезервированным ID.
+Run `pnpm test` from the player-plugins root. In the Player repository,
+`pnpm test:plugins` covers search, intention recovery, preview/import, and track-menu
+navigation. A live connection requires a separate check with a Soulseek account.
+This bundled package updates through the [Player submodule](../docs/tooling.md#player-integration),
+not by installing an external `.player-plugin` with the same reserved ID.
 
-[Документация](../docs/README.md) · [SDK](../docs/sdk.md)
+[Documentation](../docs/README.md) · [SDK](../docs/sdk.md)

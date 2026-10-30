@@ -1,54 +1,54 @@
-# SDK и декларативный интерфейс
+# SDK and declarative UI
 
-[Документация](README.md) · [Создать плагин](development.md)
+[Documentation](README.md) · [Create a plugin](development.md)
 
-Глобальные типы находятся в [sdk.d.ts](../sdk.d.ts). Файл не нужно импортировать
-в исполняемый `main.js`: `registerPlugin` и контекст создаёт Player.
-[tsconfig.sdk.json](../tsconfig.sdk.json) проверяет декларации, а не код всех плагинов.
+Global declarations live in [sdk.d.ts](../sdk.d.ts). Do not import this file into
+the executable `main.js`: Player supplies `registerPlugin` and the context.
+[tsconfig.sdk.json](../tsconfig.sdk.json) checks the declarations, not every plugin's code.
 
-## Жизненный цикл
+## Lifecycle
 
-Один `registerPlugin(factory)` регистрирует синхронную factory. Она получает `ctx`
-и возвращает обработчики; каждый обработчик необязателен.
+One `registerPlugin(factory)` call registers a synchronous factory. It receives
+`ctx` and returns handlers; each handler is optional.
 
-| Обработчик | Когда вызывается |
+| Handler | Invocation |
 | --- | --- |
-| `activate()` | После создания экземпляра, может вернуть Promise |
-| `render({viewId, context})` | Когда хост запрашивает UI конкретного вклада |
-| `action({action, payload, fields, context})` | После кнопки, переключателя или действия трека |
-| `search({providerId, query, cursor, limit})` | Для страницы результатов поиска |
-| `renderSearch({ids})` | Для обновления уже найденных строк; `null` сохраняет прежние |
-| `deactivate()` | При штатном отключении; освобождает ресурсы экземпляра |
+| `activate()` | After instance creation; may return a Promise |
+| `render({viewId, context})` | When the host requests a contribution's UI |
+| `action({action, payload, fields, context})` | After a button, toggle, or track action |
+| `search({providerId, query, cursor, limit})` | For a page of search results |
+| `renderSearch({ids})` | To refresh existing rows; `null` preserves previous rows |
+| `deactivate()` | During normal shutdown; releases instance resources |
 
-При отключении отменяется `ctx.signal`, хост завершает Worker и отклоняет дальнейшие
-capability-вызовы. Сохранённые настройки и native-операции не зависят от открытой панели;
-временные переменные Worker после его пересоздания нужно восстановить самостоятельно.
+Disabling a plugin aborts `ctx.signal`, terminates its Worker, and rejects further
+capability calls. Stored settings and native operations are independent of an open
+panel; restore transient Worker state when a new instance is created.
 
-## Контекст
+## Context
 
-| API | Назначение |
+| API | Purpose |
 | --- | --- |
-| `ctx.pluginId`, `ctx.generation` | ID и поколение активации |
-| `ctx.signal` | AbortSignal времени жизни экземпляра |
-| `ctx.call(method, args)` | Асинхронный вызов API хоста с проверкой прав |
-| `ctx.on(topic, handler)` | Native-события своего плагина; возвращает unsubscribe |
-| `ctx.playback.subscribe(handler)` | Playback snapshots; возвращает unsubscribe |
-| `ctx.playback.pause/resume/stop/seek` | Управление transport, время в секундах |
-| `ctx.playback.play`, `ctx.playback.adopt` | Воспроизведение ресурса / принятие импортированного трека |
-| `ctx.ui.invalidate()` | Перечитать дерево UI и отображаемые результаты |
-| `ctx.ui.navigate(pageId, context)` | Открыть собственную зарегистрированную страницу |
-| `ctx.android.call(method, args)` | Вызов backend подключённого Android APK |
-| `ctx.log(message)` | Локальная диагностика |
+| `ctx.pluginId`, `ctx.generation` | Plugin ID and activation generation |
+| `ctx.signal` | Instance lifetime AbortSignal |
+| `ctx.call(method, args)` | Asynchronous host API call with permission checks |
+| `ctx.on(topic, handler)` | Plugin-owned native events; returns an unsubscribe function |
+| `ctx.playback.subscribe(handler)` | Playback snapshots; returns an unsubscribe function |
+| `ctx.playback.pause/resume/stop/seek` | Transport control; time is in seconds |
+| `ctx.playback.play`, `ctx.playback.adopt` | Play a resource / adopt an imported track |
+| `ctx.ui.invalidate()` | Refresh the UI tree and displayed results |
+| `ctx.ui.navigate(pageId, context)` | Open one of the plugin's registered pages |
+| `ctx.android.call(method, args)` | Call the connected Android APK backend |
+| `ctx.log(message)` | Local diagnostics |
 
-Snapshot содержит `title`, `artist`, `album`, `position`, `duration`, `playing`,
-необязательный `resource`. Позиция и длительность — секунды. Для подписки нужно
-`playback.read`; для управления — `playback.control`.
+A snapshot contains `title`, `artist`, `album`, `position`, `duration`, `playing`,
+and an optional `resource`. Position and duration use seconds. Subscriptions require
+`playback.read`; playback control requires `playback.control`.
 
-## Настройки и секреты
+## Settings and secrets
 
-`settings.get` возвращает `{revision, values}`. В `settings.update` передаются
-ожидаемая `revision` и полное новое `values`; при конфликте нужно перечитать данные.
-Настройки относятся к конкретному ID и хранятся на устройстве в Player.
+`settings.get` returns `{revision, values}`. Pass the expected `revision` and the
+complete new `values` to `settings.update`; read the latest settings after a conflict.
+Settings belong to a specific plugin ID and are stored locally by Player.
 
 ```js
 const settings = await ctx.call('settings.get');
@@ -59,48 +59,49 @@ await ctx.call('settings.update', {
 ctx.ui.invalidate();
 ```
 
-Этот фрагмент выполняется внутри асинхронного обработчика с правом `settings`.
-Для секретов доступны `secrets.has`, `secrets.get`, `secrets.set`, `secrets.delete`
-с ключом `key` (`set` также получает `value`); требуется `secrets`.
-Пароли не помещайте в обычные настройки, логи и UI. Наличие секрета проверяйте через
-`has`, не загружая значение только ради отображения формы.
+Run this snippet inside an asynchronous handler with the `settings` permission.
+Secrets use `secrets.has`, `secrets.get`, `secrets.set`, and `secrets.delete` with
+`key` (`set` also takes `value`); they require `secrets`.
+Keep passwords out of ordinary settings, logs, and UI. Use `has` to check whether
+a secret exists without loading its value just to render a form.
 
-## Вклады plugin.json
+## plugin.json contributions
 
-| `kind` | Куда встраивается | Связанный обработчик |
+| `kind` | Placement | Handler |
 | --- | --- | --- |
-| `page` | Страница и пункт бокового меню | `render`, `viewId` равен ID вклада |
-| `settings` | Раздел настроек | `render` |
-| `search` | Блок общего поиска | `search`, `renderSearch` |
-| `track-action` | Контекстное меню трека | `action`, `payload.track` |
-| `player-widget` | `player.actions` или `player.status` | `render` |
+| `page` | A page and sidebar entry | `render`; `viewId` is the contribution ID |
+| `settings` | A settings section | `render` |
+| `search` | A block in global search | `search`, `renderSearch` |
+| `track-action` | A track's context menu | `action`, `payload.track` |
+| `player-widget` | `player.actions` or `player.status` | `render` |
 
-Каждому вкладу нужны `id`, `kind`, `label`; доступны `description`, `icon`, `order`.
-Локальный ID — до 64 символов `[a-z0-9-]`. Для `player-widget` обязателен `slot`.
-Для `page` можно задать `showInMenu: false`, сохранив внутреннюю навигацию через
-`ctx.ui.navigate()`. У остальных видов вкладов это поле запрещено.
-Любые вклады требуют права `ui`.
+Each contribution needs `id`, `kind`, and `label`; optional fields include
+`description`, `icon`, and `order`. Local IDs use `[a-z0-9-]` and are limited
+to 64 characters. `player-widget` requires a `slot`.
+A `page` can set `showInMenu: false` while remaining accessible through
+`ctx.ui.navigate()`. Other contribution kinds reject this field.
+All contributions require the `ui` permission.
 
-## Дерево UI
+## UI tree
 
-| `type` | Основные поля |
+| `type` | Main fields |
 | --- | --- |
 | `group` | `title?`, `children?` |
-| `text` | `text`, `tone?` (`error` для ошибки) |
+| `text` | `text`, `tone?` (`error` for errors) |
 | `input` | `key`, `label`, `value?`, `inputType?` (`text` / `password`) |
 | `button` | `label`, `action`, `payload?`, `disabled?` |
 | `toggle` | `label`, `value`, `action`, `payload?`, `disabled?` |
-| `results` | `items` — строки результатов |
+| `results` | `items` — result rows |
 
-Поля формы приходят в `action.fields` по `key`; состояние после сохранения
-обновляйте через `ctx.ui.invalidate()`. Хост применяет тему и общие стили Player,
-показывает ожидание на нажатой кнопке и блокирует повторное действие.
-HTML, CSS и Vue-компоненты в дереве не передаются. Глубина ограничена 12 уровнями,
-число детей узла — 100, число строк `results` — 1000.
+Form values arrive in `action.fields`, indexed by `key`. Call `ctx.ui.invalidate()`
+to refresh state after saving. The host applies Player's theme and shared styles,
+shows pending feedback on the clicked button, and blocks duplicate actions.
+UI trees do not contain HTML, CSS, or Vue components. Limits are 12 levels of depth,
+100 children per node, and 1000 rows in `results`.
 
-Поиск возвращает `{items, nextCursor}`. Строка: `{id, title, subtitle?, coverHash?,
-status?, actions?}`; действие строки получает `payload.resourceId`, а не track ID
-библиотеки. Формат непрозрачного курсора определяет плагин.
+Search returns `{items, nextCursor}`. A row is `{id, title, subtitle?, coverHash?,
+status?, actions?}`; its action receives `payload.resourceId`, not a library track ID.
+The plugin defines its opaque cursor format.
 
-Рабочие образцы: [Hello](../examples/hello/main.js), [Soulseek](../soulseek/main.js).
-Полный контракт хоста: [SDK scope](https://github.com/verncat/player/blob/feat/plugins/docs/plugins/scope/sdk-ui-scope.md).
+Working examples: [Hello](../examples/hello/main.js), [Soulseek](../soulseek/main.js).
+Full host contract: [SDK scope](https://github.com/verncat/player/blob/feat/plugins/docs/plugins/scope/sdk-ui-scope.md).

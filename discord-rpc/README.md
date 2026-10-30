@@ -1,34 +1,36 @@
 # Discord RPC
 
-Встроенный пакет `player.discord-rpc`: показывает текущий трек и исполнителя
-в Discord Rich Presence. Поддерживает macOS, Windows и Linux с Discord desktop.
+Bundled package `player.discord-rpc` displays the current track and artist
+in Discord Rich Presence. Supports macOS, Windows, and Linux with Discord desktop.
 
-## Файлы
+## Files
 
-| Файл | Назначение |
+| File | Purpose |
 | --- | --- |
-| [plugin.json](plugin.json) | ID, платформы, разрешения и вклад `settings/general` |
-| [main.js](main.js) | Подписка на playback, фильтрация повторов и вызовы `discord.update` |
-| [assets/README.md](assets/README.md) | Источник логотипа и инструкция генерации PNG |
-| [assets/discord.svg](assets/discord.svg) | Векторный исходник логотипа |
-| [assets/discord.png](assets/discord.png) | Растр, встроенный data URL в manifest |
+| [plugin.json](plugin.json) | ID, platforms, permissions, and the `settings/general` contribution |
+| [main.js](main.js) | Playback subscription, duplicate filtering, and `discord.update` calls |
+| [assets/README.md](assets/README.md) | Logo attribution and PNG generation instructions |
+| [assets/discord.svg](assets/discord.svg) | Vector logo source |
+| [assets/discord.png](assets/discord.png) | Raster embedded as a data URL in the manifest |
 
-## Поведение
+## Behavior
 
-При активации `main.js` подписывается на состояние воспроизведения. Он отправляет
-изменения трека и заметные изменения позиции в API хоста, объединяет ожидающие
-обновления и очищает activity при паузе. Ошибка native-вызова появляется в разделе
-настроек плагина. Изменение PNG отдельно от manifest не обновляет картинку пакета.
+On activation, `main.js` subscribes to playback state. It sends track changes
+and significant position changes to the host API, coalesces pending updates,
+and clears activity when paused. Native call errors appear in the plugin's
+settings section. Replacing the PNG without updating the manifest does not
+change the package image.
 
-Права: `ui`, `playback.read`, `settings`, `native.discord`.
-IPC-соединение с Discord и переподключение реализованы в
-[Rust-адаптере Player](https://github.com/verncat/player/blob/feat/plugins/src-tauri/src/plugins/discord.rs).
+Permissions: `ui`, `playback.read`, `settings`, `native.discord`.
+Discord IPC and reconnection are handled by
+[Player's Rust adapter](https://github.com/verncat/player/blob/feat/plugins/src-tauri/src/plugins/discord.rs).
 
-## Проверка и обновление
+## Testing and updates
 
-Из корня player-plugins запустите `pnpm test`. Worker-сценарии проверяются через
-`pnpm test:plugins` в репозитории Player; живую activity проверяют с запущенным Discord.
-Пакет встроенный, с зарезервированным ID: упаковка не делает его доступным для
-обычной внешней установки. Обновление — через [submodule в Player](../docs/tooling.md#связь-с-player).
+Run `pnpm test` from the player-plugins root. Worker scenarios are covered by
+`pnpm test:plugins` in the Player repository; verify live activity with Discord running.
+This is a bundled package with a reserved ID: packaging it does not make it eligible
+for ordinary external installation. Update it through the
+[Player submodule](../docs/tooling.md#player-integration).
 
-[Документация](../docs/README.md) · [Структура репозитория](../docs/structure.md)
+[Documentation](../docs/README.md) · [Repository structure](../docs/structure.md)

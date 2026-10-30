@@ -1,106 +1,108 @@
-# Структура репозитория
+# Repository structure
 
-[Документация](README.md) · [Разработка плагина](development.md)
+[Documentation](README.md) · [Plugin development](development.md)
 
 ```text
 player-plugins/
-├── README.md                     # точка входа и быстрый старт
-├── catalog.json                  # публичный список расширений
-├── package.json                  # команды pnpm и зависимости инструментов
-├── pnpm-lock.yaml                # закреплённая версия TypeScript
-├── sdk.d.ts                      # глобальные типы API 1
-├── tsconfig.sdk.json             # проверка деклараций SDK
-├── .gitignore                    # исключения для зависимостей и результатов сборки
-├── .github/workflows/check.yml   # проверки пакетов и SDK при push / pull request
-├── docs/                         # общие руководства
-│   ├── README.md                 # навигация по документации
-│   ├── structure.md              # этот документ
-│   ├── development.md            # создание пакета и формат manifest
-│   ├── sdk.md                    # API, lifecycle и декларативный UI
-│   ├── catalog.md                # публикация списка расширений
-│   └── tooling.md                # команды, проверки и связь с Player
-├── discord-rpc/                  # встроенный пакет Player
-│   ├── README.md                 # поведение и карта файлов пакета
-│   ├── plugin.json               # ID, платформы, разрешения, раздел настроек
-│   ├── main.js                   # playback-события → Discord API хоста
+├── README.md                     # entry point and quick start
+├── catalog.json                  # public plugin listing
+├── package.json                  # pnpm commands and tooling dependencies
+├── pnpm-lock.yaml                # pinned TypeScript version
+├── sdk.d.ts                      # global API 1 declarations
+├── tsconfig.sdk.json             # SDK declaration checks
+├── .gitignore                    # dependency and build output exclusions
+├── .github/workflows/check.yml   # package and SDK checks on push / pull request
+├── docs/                         # shared guides
+│   ├── README.md                 # documentation index
+│   ├── structure.md              # this document
+│   ├── development.md            # package creation and manifest format
+│   ├── sdk.md                    # API, lifecycle, and declarative UI
+│   ├── catalog.md                # publishing the plugin listing
+│   └── tooling.md                # commands, checks, and Player integration
+├── discord-rpc/                  # bundled Player package
+│   ├── README.md                 # behavior and package file map
+│   ├── plugin.json               # ID, platforms, permissions, and settings section
+│   ├── main.js                   # playback events → host Discord API
 │   └── assets/
-│       ├── README.md             # источник логотипа и генерация PNG
-│       ├── discord.svg           # векторный исходник
-│       └── discord.png           # логотип, встроенный в manifest как data URL
-├── soulseek/                     # встроенный пакет Player
-│   ├── README.md                 # поиск, загрузки, предпрослушивание, замена
-│   ├── plugin.json               # права и вклады в настройки, поиск и меню трека
-│   ├── main.js                   # UI и координация native-операций
+│       ├── README.md             # logo attribution and PNG generation
+│       ├── discord.svg           # vector source
+│       └── discord.png           # logo embedded in the manifest as a data URL
+├── soulseek/                     # bundled Player package
+│   ├── README.md                 # search, downloads, preview, and replacement
+│   ├── plugin.json               # permissions and settings/search/track-menu contributions
+│   ├── main.js                   # UI and native operation coordination
 │   └── assets/
-│       ├── README.md             # источник логотипа
-│       └── soulseek.png          # логотип, встроенный в manifest как data URL
+│       ├── README.md             # logo attribution
+│       └── soulseek.png          # logo embedded in the manifest as a data URL
 ├── examples/
 │   ├── hello/
-│   │   ├── README.md             # запуск и поведение примера
-│   │   ├── plugin.json           # обычный внешний пакет example.hello
-│   │   └── main.js               # настройки, страница и события воспроизведения
+│   │   ├── README.md             # running the example and expected behavior
+│   │   ├── plugin.json           # regular external package example.hello
+│   │   └── main.js               # settings, a page, and playback events
 │   └── android-native/
-│       ├── README.md             # сборка, подключение APK и проверки
-│       ├── plugin.json           # manifest плагина, встраиваемый в APK
-│       ├── main.js               # UI и ctx.android.call()
-│       ├── build.gradle.kts      # сборка APK, JSON assets и Rust JNI
-│       ├── settings.gradle.kts   # Android/Kotlin Gradle plugins и repositories
-│       ├── gradle.properties     # настройки Gradle и AndroidX
-│       ├── proguard-rules.pro    # сохранение reflection/JNI entrypoint
+│       ├── README.md             # building, connecting, and testing the APK
+│       ├── plugin.json           # plugin manifest embedded in the APK
+│       ├── main.js               # UI and ctx.android.call()
+│       ├── build.gradle.kts      # APK, JSON assets, and Rust JNI build
+│       ├── settings.gradle.kts   # Android/Kotlin Gradle plugins and repositories
+│       ├── gradle.properties     # Gradle and AndroidX settings
+│       ├── proguard-rules.pro    # reflection/JNI entrypoint preservation
 │       ├── src/main/
 │       │   ├── AndroidManifest.xml
 │       │   └── java/dev/verncat/player/example/nativeplugin/NativePlugin.kt
 │       └── native/
-│           ├── Cargo.toml        # Rust cdylib player_native_example
-│           ├── Cargo.lock        # закреплённые JNI/JSON зависимости
-│           └── src/lib.rs        # JNI entrypoint, echo и unit test
+│           ├── Cargo.toml        # player_native_example Rust cdylib
+│           ├── Cargo.lock        # pinned JNI/JSON dependencies
+│           └── src/lib.rs        # JNI entrypoint, echo, and unit test
 ├── scripts/
 │   ├── package-plugin.mjs        # plugin.json + main.js → .player-plugin
-│   └── build-android-plugin.mjs  # Cargo + NDK → .so для выбранных ABI
-├── tests/packages.test.mjs       # упаковка всех пакетов и согласованность каталога
-├── gradlew / gradlew.bat         # Gradle wrapper для Android-примера
+│   └── build-android-plugin.mjs  # Cargo + NDK → .so for selected ABIs
+├── tests/packages.test.mjs       # packaging and catalog consistency checks
+├── gradlew / gradlew.bat         # Gradle wrapper for the Android example
 └── gradle/wrapper/
     ├── gradle-wrapper.jar
-    └── gradle-wrapper.properties # закреплённый дистрибутив Gradle
+    └── gradle-wrapper.properties # pinned Gradle distribution
 ```
 
-## Структура обычного пакета
+## Regular package layout
 
-Минимум — `plugin.json` и `main.js` в одной папке. Manifest описывает пакет,
-`main.js` содержит весь исполняемый код и один вызов `registerPlugin`.
-Подробнее: [создание пакета](development.md).
+A package needs at least `plugin.json` and `main.js` in the same directory.
+The manifest describes the package; `main.js` contains all executable code
+and one call to `registerPlugin`. See [package creation](development.md).
 
-`README.md` объясняет поведение конкретного плагина. В `assets/` хранятся исходники
-изображений и сведения об их происхождении. Упаковщик читает только два обязательных
-файла: изображения и другие ресурсы автоматически в пакет не добавляются.
-Поля `image` с относительным путём не поддерживаются; используйте HTTP(S) или data URL.
-Замена PNG в `assets/` сама по себе не обновит встроенную картинку в `plugin.json`.
+A package's `README.md` explains its behavior. `assets/` holds image sources
+and attribution. The packer only reads the two required files: images and other
+resources are not automatically included. Relative paths in `image` are unsupported;
+use HTTP(S) or a data URL. Replacing a PNG in `assets/` does not update the image
+already embedded in `plugin.json`.
 
-Новый плагин создавайте в отдельной папке; `examples/` предназначена для образцов.
-Папка и ID — разные сущности: ID задаётся в manifest и сохраняется при обновлении.
-Добавление папки не добавляет запись в [каталог](catalog.md) автоматически.
+Create each new plugin in a separate directory; `examples/` is for sample packages.
+The directory name and plugin ID are separate: the manifest defines the ID, which
+must remain stable across updates. Adding a directory does not automatically add
+an entry to the [catalog](catalog.md).
 
-## Исходники и результаты сборки
+## Sources and generated files
 
-| Результат | Где появляется | Хранение |
+| Output | Location | Storage |
 | --- | --- | --- |
-| Установочные npm-зависимости | `node_modules/` | Исключены из Git |
-| Упакованный JS-плагин | Указанный output либо `<folder>/<id>-<version>.player-plugin` | Исключён из Git |
-| Rust Android build | `examples/android-native/native/target/` | Исключён из Git |
-| Скопированные JNI-библиотеки | `examples/android-native/build/generated/jniLibs/<abi>/` | Исключены из Git |
-| JSON manifest/script для APK | `examples/android-native/build/generated/pluginAssets/player-plugin.json` | Генерируется Gradle |
-| Debug APK | `examples/android-native/build/outputs/apk/debug/android-native-debug.apk` | Исключён из Git |
-| Gradle cache / SDK path | `.gradle/`, `local.properties` | Исключены из Git |
+| Installed npm dependencies | `node_modules/` | Ignored by Git |
+| Packaged JS plugin | Explicit output or `<folder>/<id>-<version>.player-plugin` | Ignored by Git |
+| Rust Android build | `examples/android-native/native/target/` | Ignored by Git |
+| Copied JNI libraries | `examples/android-native/build/generated/jniLibs/<abi>/` | Ignored by Git |
+| APK manifest/script JSON | `examples/android-native/build/generated/pluginAssets/player-plugin.json` | Generated by Gradle |
+| Debug APK | `examples/android-native/build/outputs/apk/debug/android-native-debug.apk` | Ignored by Git |
+| Gradle cache / SDK path | `.gradle/`, `local.properties` | Ignored by Git |
 
-`Cargo.lock`, `pnpm-lock.yaml` и Gradle wrapper хранятся в Git для воспроизводимой сборки.
+`Cargo.lock`, `pnpm-lock.yaml`, and the Gradle wrapper are tracked for reproducible builds.
 
-## Граница с Player
+## Boundary with Player
 
-Эта репа хранит пакеты, а Player — Worker runtime, UI renderer, проверку manifest,
-установку, хранилища и native gateway. Поэтому `src/` и `src-tauri/` плеера здесь нет.
-Rust в `examples/android-native/native/` принадлежит отдельному APK; встроенные
-Rust-адаптеры Discord/Soulseek находятся в Player.
+This repository holds packages. Player owns the Worker runtime, UI renderer,
+manifest validation, installation, storage, and native gateway. Player's `src/`
+and `src-tauri/` directories therefore live in the Player repository.
+Rust in `examples/android-native/native/` belongs to the standalone APK;
+the bundled Discord/Soulseek Rust adapters live in Player.
 
-В Player эта репа подключена как submodule `plugins/`. Например,
-`player-plugins/soulseek/main.js` доступен в его checkout как `Player/plugins/soulseek/main.js`.
-Как обновлять закреплённый коммит: [инструменты и поставка](tooling.md#связь-с-player).
+Player includes this repository as the `plugins/` submodule. For example,
+`player-plugins/soulseek/main.js` is available there as `Player/plugins/soulseek/main.js`.
+See [tooling and delivery](tooling.md#player-integration) for updating the pinned commit.

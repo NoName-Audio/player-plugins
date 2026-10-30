@@ -1,28 +1,28 @@
 # Player plugins
 
-Исходники расширений для [Player](https://github.com/verncat/player): встроенные
-Discord RPC и Soulseek, устанавливаемый JavaScript-пример, Android APK-пример,
-SDK и публичный каталог.
+Plugin sources for [Player](https://github.com/verncat/player): bundled Discord RPC
+and Soulseek packages, an installable JavaScript example, an Android APK example,
+the SDK, and the public catalog.
 
-## Что где лежит
+## Repository contents
 
-| Путь | Назначение |
+| Path | Purpose |
 | --- | --- |
-| [discord-rpc/](discord-rpc/README.md) | Пакет Discord Rich Presence для desktop |
-| [soulseek/](soulseek/README.md) | Пакет поиска, предпрослушивания и загрузки музыки |
-| [examples/hello/](examples/hello/README.md) | Образец обычного устанавливаемого плагина |
-| [examples/android-native/](examples/android-native/README.md) | Отдельный Android APK с Kotlin и Rust JNI |
-| [sdk.d.ts](sdk.d.ts) | Типы API плагинов, версия 1 |
-| [catalog.json](catalog.json) | Список расширений для Settings → Plugins |
-| [scripts/](docs/tooling.md) | Упаковка JavaScript и сборка Rust для Android |
-| [docs/](docs/README.md) | Руководства разработчика и сопровождающего |
+| [discord-rpc/](discord-rpc/README.md) | Discord Rich Presence package for desktop |
+| [soulseek/](soulseek/README.md) | Music search, preview, and download package |
+| [examples/hello/](examples/hello/README.md) | Example of a regular installable plugin |
+| [examples/android-native/](examples/android-native/README.md) | Standalone Android APK with Kotlin and Rust JNI |
+| [sdk.d.ts](sdk.d.ts) | Plugin API declarations, version 1 |
+| [catalog.json](catalog.json) | Plugin listing for Settings → Plugins |
+| [scripts/](docs/tooling.md) | JavaScript packaging and Rust builds for Android |
+| [docs/](docs/README.md) | Author and maintainer guides |
 
-Полное дерево с назначением файлов: [структура репозитория](docs/structure.md).
+See the [repository structure](docs/structure.md) for the full file tree and responsibilities.
 
-## Начать работу
+## Get started
 
-Нужны Node.js 20+ и pnpm. Для упаковки JavaScript-плагина исходники Player не нужны.
-Все команды ниже выполняются из корня **player-plugins**.
+Requires Node.js 20+ and pnpm. Packaging a JavaScript plugin does not require
+Player's source code. Run these commands from the **player-plugins** repository root.
 
 ```sh
 git clone https://github.com/verncat/player-plugins.git
@@ -33,17 +33,17 @@ pnpm test:plugin-sdk
 pnpm plugins:pack examples/hello /tmp/hello.player-plugin
 ```
 
-Установите файл через Settings → Plugins или используйте ссылку
+Install the file through Settings → Plugins, or use this URL:
 `https://github.com/verncat/player-plugins/tree/main/examples/hello`.
 
-## Документация
+## Documentation
 
-- [Создать плагин](docs/development.md): папка, manifest, код, упаковка и установка.
-- [SDK и UI](docs/sdk.md): жизненный цикл, вызовы API и элементы интерфейса.
-- [Опубликовать в каталоге](docs/catalog.md): формат JSON и добавление записи.
-- [Инструменты и связь с Player](docs/tooling.md): команды, проверки, submodule и обновления.
+- [Create a plugin](docs/development.md): directory layout, manifest, code, packaging, and installation.
+- [SDK and UI](docs/sdk.md): lifecycle, API calls, and interface elements.
+- [Publish to the catalog](docs/catalog.md): JSON format and adding an entry.
+- [Tooling and Player integration](docs/tooling.md): commands, checks, the submodule, and updates.
 
-Player загружает каталог из
+Player fetches the catalog from
 `https://raw.githubusercontent.com/verncat/player-plugins/main/catalog.json`.
-Discord/Soulseek поставляются вместе с Player из закреплённого коммита этой репы;
-runtime и Rust-адаптеры находятся в репозитории плеера.
+Discord and Soulseek ship with Player from a pinned commit of this repository;
+the runtime and Rust adapters live in the Player repository.

@@ -1,13 +1,13 @@
-# Каталог расширений
+# Plugin catalog
 
-[Документация](README.md) · [Файл catalog.json](../catalog.json)
+[Documentation](README.md) · [catalog.json](../catalog.json)
 
-Player получает список из
+Player fetches the listing from
 `https://raw.githubusercontent.com/verncat/player-plugins/main/catalog.json`.
-Репозиторий должен быть публичным. Загрузка каталога не скачивает исполняемый код:
-пакет загружается отдельно после выбора Install.
+The repository must be public. Fetching the catalog does not download executable
+code: the package is downloaded separately after selecting Install.
 
-## Формат записи
+## Entry format
 
 ```json
 {
@@ -31,46 +31,49 @@ Player получает список из
 }
 ```
 
-| Поле | Правило |
+| Field | Rule |
 | --- | --- |
-| `schemaVersion` | Версия схемы всего файла, сейчас `1` |
-| `updatedAt` каталога | Календарная дата `YYYY-MM-DD` |
-| `plugins` | Не более 256 записей с уникальными ID |
-| `id`, `name`, `description`, `repository`, `addedAt`, `platforms` | Обязательные поля записи |
-| `installUrl` | HTTPS-ссылка на папку `plugin.json` + `main.js` или готовый `.player-plugin`; без неё используется `repository` |
-| `version`, `author`, `image`, `updatedAt`, `tags` | Необязательные метаданные записи |
-| `tags` | До 12 непустых тегов, каждый до 40 байт UTF-8 |
+| `schemaVersion` | Whole-file schema version; currently `1` |
+| Catalog `updatedAt` | Calendar date in `YYYY-MM-DD` format |
+| `plugins` | At most 256 entries with unique IDs |
+| `id`, `name`, `description`, `repository`, `addedAt`, `platforms` | Required entry fields |
+| `installUrl` | HTTPS link to a `plugin.json` + `main.js` directory or a packaged `.player-plugin`; defaults to `repository` |
+| `version`, `author`, `image`, `updatedAt`, `tags` | Optional entry metadata |
+| `tags` | Up to 12 nonempty tags, each up to 40 UTF-8 bytes |
 
-`id`, `name`, платформы, автор, изображение и версия подчиняются правилам
-[manifest](development.md#поля-pluginjson). Ссылки repository/installUrl — HTTPS
-без credentials. `addedAt` не позже даты каталога; дата обновления записи — между
-её добавлением и датой каталога. Размер всего ответа — не более 512 KiB.
-Неизвестные поля и невалидная запись приводят к отклонению всего ответа.
+IDs, names, platforms, authors, images, and versions follow the
+[manifest rules](development.md#pluginjson-fields). Repository/install URLs must
+use HTTPS without embedded credentials. `addedAt` cannot be later than the catalog
+date; an entry's update date must fall between its addition date and the catalog date.
+The entire response is limited to 512 KiB. Unknown fields or an invalid entry cause
+the entire response to be rejected.
 
-## Добавить или обновить запись
+## Add or update an entry
 
-1. Подготовьте существующий пакет с постоянным ID и опубликованными `plugin.json` / `main.js`.
-2. Укажите installUrl выбранной папки; ссылка на корень monorepo не найдёт вложенный пакет.
-3. Согласуйте ID, имя, версию и платформы с manifest. При обновлении сохраняйте `addedAt`.
-4. Измените `updatedAt` записи и каталога, запустите `pnpm test` и `pnpm test:plugin-sdk`.
-5. Опубликуйте изменения в `main`; в Player нажмите Refresh catalog.
+1. Prepare an existing package with a stable ID and published `plugin.json` / `main.js`.
+2. Set installUrl to the selected directory; a monorepo root URL will not locate a nested package.
+3. Match the ID, name, version, and platforms to the manifest. Preserve `addedAt` during updates.
+4. Update the entry and catalog `updatedAt` fields; run `pnpm test` and `pnpm test:plugin-sdk`.
+5. Publish to `main`, then select Refresh catalog in Player.
 
-Текущий `tests/packages.test.mjs` проверяет записи из этой репы и известные папки
-пакетов. При добавлении нового локального плагина дополните массив `folders` теста.
-Плеер поддерживает каталожные ссылки на другие публичные репозитории, но локальная
-проверка этой репы пока рассчитана на собственные пакеты.
+The current `tests/packages.test.mjs` checks this repository's entries and known
+package directories. Add each new local plugin to the test's `folders` array.
+Player supports catalog links to other public repositories, but this repository's
+local consistency check currently expects its own packages.
 
-Внешние пакеты с ID `player.*` и правами `native.discord` / `native.soulseek`
-отклоняются: Discord/Soulseek уже поставляются в сборке Player. Android-пример
-подключается через установленный APK и Find APK plugins, без записи в этом списке.
+External packages with `player.*` IDs or `native.discord` / `native.soulseek`
+permissions are rejected: Discord and Soulseek already ship with Player.
+The Android example connects through an installed APK and Find APK plugins;
+it is not listed in this JSON catalog.
 
-## Получение и установка
+## Fetching and installation
 
-Список обновляется при открытии раздела и по Refresh catalog. Встроенной копии,
-дискового кеша и offline fallback нет. При ошибке прежний список очищается,
-показывается toast; установка из файла или по прямой ссылке остаётся доступной.
+The list refreshes when the section opens and through Refresh catalog. There is
+no bundled copy, disk cache, or offline fallback. On failure, the previous list
+is cleared and a toast appears; file and direct-URL installation remain available.
 
-После Install Player проверяет реальный manifest и совпадение ID, затем показывает
-разрешения и fingerprint. Каталог не выдаёт права, не подтверждает автора и не
-обновляет уже установленный код автоматически. Обновление встроенных пакетов
-через submodule — отдельная операция: [поставка](tooling.md#связь-с-player).
+After Install, Player validates the actual manifest and matching ID, then presents
+permissions and a fingerprint. Catalog metadata does not grant permissions,
+authenticate authors, or automatically update installed code. Updating bundled
+packages through the submodule is a separate operation: see
+[delivery](tooling.md#player-integration).

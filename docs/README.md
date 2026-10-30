@@ -1,22 +1,23 @@
-# Документация player-plugins
+# player-plugins documentation
 
-Команды в этих документах выполняются из корня `player-plugins`, если явно
-не указан репозиторий **Player**. Пути файлов также указаны от корня текущей репы.
+Run commands in these documents from the `player-plugins` root unless the
+**Player** repository is explicitly specified. File paths are also relative
+to this repository's root.
 
-| Задача | Документ |
+| Task | Document |
 | --- | --- |
-| Найти исходники и понять назначение файлов | [Структура репозитория](structure.md) |
-| Написать первый JavaScript-плагин | [Разработка](development.md) |
-| Подключить UI, настройки и события плеера | [SDK](sdk.md) |
-| Добавить расширение в список плеера | [Каталог](catalog.md) |
-| Упаковать, проверить или обновить встроенные пакеты | [Инструменты и поставка](tooling.md) |
-| Разобраться с Discord | [discord-rpc](../discord-rpc/README.md) |
-| Разобраться с поиском, загрузкой и заменой треков | [soulseek](../soulseek/README.md) |
-| Запустить минимальный JavaScript-пример | [Hello Player](../examples/hello/README.md) |
-| Собрать плагин с Rust на Android | [Android native](../examples/android-native/README.md) |
+| Locate sources and understand file responsibilities | [Repository structure](structure.md) |
+| Write your first JavaScript plugin | [Development](development.md) |
+| Add UI, settings, and playback events | [SDK](sdk.md) |
+| Add a plugin to Player's listing | [Catalog](catalog.md) |
+| Package, test, or update bundled plugins | [Tooling and delivery](tooling.md) |
+| Understand the Discord integration | [discord-rpc](../discord-rpc/README.md) |
+| Understand search, downloads, and track replacement | [soulseek](../soulseek/README.md) |
+| Run the minimal JavaScript example | [Hello Player](../examples/hello/README.md) |
+| Build an Android plugin with Rust | [Android native](../examples/android-native/README.md) |
 
-Текущий контракт — **Plugin API 1**. Его типы: [sdk.d.ts](../sdk.d.ts).
-Схему пакетов и права проверяет Player; упаковщик из этой репы только формирует JSON.
+The current contract is **Plugin API 1**. Its declarations are in [sdk.d.ts](../sdk.d.ts).
+Player validates package schemas and permissions; this repository's packer only produces JSON.
 
-Детали реализации хоста и интеграционные сценарии находятся в
-[scope-документах Player](https://github.com/verncat/player/tree/feat/plugins/docs/plugins/scope).
+Host implementation details and integration scenarios are described in
+[Player's scope documents](https://github.com/verncat/player/tree/feat/plugins/docs/plugins/scope).

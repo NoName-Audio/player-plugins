@@ -1,17 +1,17 @@
-# Создание JavaScript-плагина
+# Creating a JavaScript plugin
 
-[Документация](README.md) · [Структура файлов](structure.md) · [SDK](sdk.md)
+[Documentation](README.md) · [File structure](structure.md) · [SDK](sdk.md)
 
-Плагин — manifest и один JavaScript-файл. Player выполняет его в Web Worker,
-а интерфейс строит из возвращённых данных. DOM, Vue, Node.js и прямого Tauri API
-в контексте плагина нет. Зависимости заранее собираются в `main.js` без внешних
-`import` / `require`.
+A plugin consists of a manifest and one JavaScript file. Player runs it in a Web Worker
+and renders its interface from returned data. The plugin context has no DOM, Vue,
+Node.js, or direct Tauri API. Bundle dependencies into `main.js` in advance,
+without external `import` / `require` statements.
 
-## Создать папку
+## Create a directory
 
-Из корня `player-plugins` создайте папку `my-plugin/` с двумя файлами.
-Для рабочего образца также можно скопировать [examples/hello](../examples/hello/README.md),
-затем поменять ID и метаданные.
+From the `player-plugins` root, create `my-plugin/` with the following two files.
+You can also copy [examples/hello](../examples/hello/README.md) as a working starting
+point, then change its ID and metadata.
 
 `my-plugin/plugin.json`:
 
@@ -45,67 +45,69 @@ registerPlugin((ctx) => ({
 }));
 ```
 
-Factory синхронно возвращает объект обработчиков. Не делайте её `async`;
-асинхронную инициализацию выполняйте в `activate()`.
+The factory returns its handler object synchronously. Do not make the factory
+`async`; perform asynchronous initialization in `activate()`.
 
-## Поля plugin.json
+## plugin.json fields
 
-| Поле | Назначение и ограничения |
+| Field | Purpose and limits |
 | --- | --- |
-| `id` | Постоянный ID до 100 символов, части через точку из `[a-z0-9-]`; `player.*` зарезервирован |
-| `name` | Непустое имя до 100 байт UTF-8 |
-| `version` | `major.minor.patch`, три неотрицательных целых, без prerelease |
-| `apiVersion` | Сейчас только `1` |
-| `description` | Описание до 2000 байт UTF-8; необязательно |
-| `author` | Имя строкой или `{ "name": "…", "url": "https://…" }`; необязательно |
-| `repository`, `homepage` | HTTP(S)-ссылки без встроенных credentials; необязательны |
-| `image` | HTTP(S)-ссылка или PNG/JPEG/WebP/GIF data URL до 256 KiB декодированных данных |
-| `platforms` | Непустой массив из `macos`, `windows`, `linux`, `android` |
-| `permissions` | Только необходимые права из таблицы ниже |
-| `contributions` | До 32 вкладов, локальные ID уникальны |
+| `id` | Stable ID, up to 100 characters; dot-separated parts using `[a-z0-9-]`; `player.*` is reserved |
+| `name` | Nonempty name, up to 100 UTF-8 bytes |
+| `version` | `major.minor.patch`, three nonnegative integers, no prerelease |
+| `apiVersion` | Currently only `1` |
+| `description` | Optional description, up to 2000 UTF-8 bytes |
+| `author` | Optional name string or `{ "name": "…", "url": "https://…" }` |
+| `repository`, `homepage` | Optional HTTP(S) URLs without embedded credentials |
+| `image` | HTTP(S) URL or PNG/JPEG/WebP/GIF data URL, up to 256 KiB of decoded data |
+| `platforms` | Nonempty array of `macos`, `windows`, `linux`, `android` |
+| `permissions` | Only the permissions needed, from the table below |
+| `contributions` | Up to 32 contributions with unique local IDs |
 
-Относительные пути и SVG data URL в `image` не поддерживаются. Для одноцветного
-логотипа в меню настроек нужна картинка с прозрачным фоном; карточка сохраняет
-исходные цвета. Упакованный JSON целиком должен помещаться в 4 MiB.
-Неизвестные поля отклоняются Player.
+Relative paths and SVG data URLs are unsupported in `image`. Use a transparent
+background for a logo that should be tinted in the settings menu; cards retain
+its original colors. The entire packaged JSON must fit within 4 MiB.
+Player rejects unknown fields.
 
-| Право | Возможности |
+| Permission | Capabilities |
 | --- | --- |
-| `ui` | Страницы, настройки, поиск, действия треков и виджеты |
-| `settings` | Собственные настройки с номером ревизии |
-| `secrets` | Собственные секреты через credential provider хоста |
-| `playback.read` | События состояния воспроизведения |
-| `playback.control` | Управление воспроизведением |
-| `network.http` | Вызовы `http.request` / `http.download` через хост |
-| `library.import`, `library.replace` | Импорт / замена через выданные хостом ресурсы |
+| `ui` | Pages, settings, search, track actions, and widgets |
+| `settings` | Plugin-owned settings with revision numbers |
+| `secrets` | Plugin-owned secrets through the host credential provider |
+| `playback.read` | Playback state events |
+| `playback.control` | Playback control |
+| `network.http` | Host `http.request` / `http.download` calls |
+| `library.import`, `library.replace` | Import / replacement using resources issued by the host |
 
-`native.discord` и `native.soulseek` доступны встроенным пакетам. `native.android`
-используется только при подключении установленного APK: Player формирует binding
-с package/class и SHA-256 файла/сертификата. Копирование этого права в обычный JS-пакет
-не подключает native-код. См. [Android-пример](../examples/android-native/README.md).
+`native.discord` and `native.soulseek` are reserved for bundled packages.
+`native.android` is used only when connecting an installed APK: Player creates
+a binding containing the package/class and file/certificate SHA-256 hashes.
+Adding this permission to an ordinary JS package does not connect native code.
+See the [Android example](../examples/android-native/README.md).
 
-## Упаковать и установить
+## Package and install
 
 ```sh
 pnpm plugins:pack my-plugin /tmp/my-plugin.player-plugin
 ```
 
-Результат — UTF-8 JSON `{manifest, script}`, не ZIP. Упаковщик не запускает npm,
-не собирает зависимости, не встраивает `assets/` и не проверяет все правила Player.
-Успешная упаковка ещё не означает, что пакет можно установить или включить.
+The result is UTF-8 JSON `{manifest, script}`, not a ZIP archive. The packer does
+not run npm, bundle dependencies, embed `assets/`, or validate every Player rule.
+Successful packaging alone does not guarantee that the package can be installed
+or enabled.
 
-В Player откройте Settings → Plugins, выберите файл, проверьте manifest и разрешения,
-подтвердите установку, затем включите плагин. В боковом меню появится My plugin.
-Ошибки entrypoint и выполнения проверяются при включении Worker.
+In Player, open Settings → Plugins, select the file, review its manifest and
+permissions, confirm installation, then enable the plugin. My plugin will appear
+in the sidebar. Entrypoint and execution errors are checked when the Worker starts.
 
-Для установки по ссылке опубликуйте `plugin.json` и `main.js` в одной папке
-публичного GitHub-репозитория. Можно указать корень репы, `tree/<ref>/<folder>`,
-прямую HTTPS-ссылку на `.player-plugin` или `plugin.json`. Player сохраняет
-конкретный GitHub commit и проверяет ID выбранного пакета.
+For URL installation, publish `plugin.json` and `main.js` in the same directory
+of a public GitHub repository. Supported URLs include repository roots,
+`tree/<ref>/<folder>`, and direct HTTPS links to a `.player-plugin` or `plugin.json`.
+Player records the specific GitHub commit and verifies the selected package ID.
 
-## Обновить
+## Update
 
-Сохраните тот же ID, увеличьте `version`, отключите установленный плагин и установите
-новую версию. Настройки остаются в хосте; локальное состояние Worker создаётся заново.
-Для появления в списке плеера отдельно измените [catalog.json](catalog.md).
-Встроенные Discord/Soulseek обновляются через закреплённый коммит сборки Player.
+Keep the same ID, increase `version`, disable the installed plugin, and install
+the new version. Settings remain in the host; local Worker state is recreated.
+Update [catalog.json](catalog.md) separately to change Player's listing.
+Bundled Discord/Soulseek packages update through the commit pinned by the Player build.

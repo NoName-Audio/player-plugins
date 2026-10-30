@@ -1,63 +1,63 @@
-# Инструменты, проверки и поставка
+# Tooling, checks, and delivery
 
-[Документация](README.md) · [Структура файлов](structure.md)
+[Documentation](README.md) · [File structure](structure.md)
 
-## Команды player-plugins
+## player-plugins commands
 
-Все команды в таблице выполняются из корня этой репы.
+Run all commands in this table from this repository's root.
 
-| Команда | Что выполняет |
+| Command | Purpose |
 | --- | --- |
-| `pnpm install --frozen-lockfile` | Устанавливает закреплённые зависимости инструментов |
-| `pnpm test` | Упаковывает четыре пакета, проверяет синтаксис JS и согласованность записей каталога |
-| `pnpm test:plugin-sdk` | Проверяет типы в `sdk.d.ts`, не `main.js` всех плагинов |
-| `pnpm plugins:pack <folder> [output]` | Формирует JSON-пакет из двух файлов |
-| `pnpm plugins:android:build` | Собирает debug APK Android-примера через Gradle wrapper |
+| `pnpm install --frozen-lockfile` | Install pinned tooling dependencies |
+| `pnpm test` | Package all four plugins and check JS syntax and catalog consistency |
+| `pnpm test:plugin-sdk` | Check `sdk.d.ts` declarations, not every plugin's `main.js` |
+| `pnpm plugins:pack <folder> [output]` | Produce a JSON package from two files |
+| `pnpm plugins:android:build` | Build the Android example's debug APK through the Gradle wrapper |
 
-[package-plugin.mjs](../scripts/package-plugin.mjs) читает `plugin.json` и `main.js`,
-формирует `{manifest, script}` и проверяет лимит 4 MiB. Если output не указан,
-создаёт `<folder>/<id>-<version>.player-plugin`. Это упаковка, а не компиляция
-или полная валидация схемы/прав Player.
+[package-plugin.mjs](../scripts/package-plugin.mjs) reads `plugin.json` and `main.js`,
+produces `{manifest, script}`, and checks the 4 MiB limit. Without an output path,
+it writes `<folder>/<id>-<version>.player-plugin`. This packages files; it does not
+compile code or fully validate Player's schema and permission rules.
 
-[build-android-plugin.mjs](../scripts/build-android-plugin.mjs) вызывается Gradle
-с папкой примера и списком ABI через запятую. Он выбирает NDK из `ANDROID_NDK_HOME`
-либо SDK из `ANDROID_HOME` / `ANDROID_SDK_ROOT`, запускает Cargo с `--locked --release`
-и копирует `.so` в `build/generated/jniLibs/<abi>/`. Сборка APK и assets остаётся Gradle.
-Подробности: [Android-пример](../examples/android-native/README.md).
+Gradle calls [build-android-plugin.mjs](../scripts/build-android-plugin.mjs) with
+the example directory and comma-separated ABIs. The script selects the NDK from
+`ANDROID_NDK_HOME` or the SDK from `ANDROID_HOME` / `ANDROID_SDK_ROOT`, runs Cargo
+with `--locked --release`, and copies `.so` files to `build/generated/jniLibs/<abi>/`.
+Gradle handles APK and asset packaging. See the [Android example](../examples/android-native/README.md).
 
-## Автоматические проверки
+## Automated checks
 
-[check.yml](../.github/workflows/check.yml) запускается на push и pull request:
-Node.js 22, pnpm 10, установка по lockfile, `pnpm test`, `pnpm test:plugin-sdk`.
-APK и живые подключения к Discord/Soulseek этот workflow не собирает и не проверяет.
+[check.yml](../.github/workflows/check.yml) runs on push and pull request:
+Node.js 22, pnpm 10, installation from the lockfile, `pnpm test`, and `pnpm test:plugin-sdk`.
+It does not build APKs or test live Discord/Soulseek connections.
 
-[packages.test.mjs](../tests/packages.test.mjs) использует реальные исходники пакетов.
-Он проверяет, что упаковщик работает из другой рабочей папки, ID уникальны,
-скрипты синтаксически корректны, а catalog installUrl ведёт к существующей локальной
-папке с согласованными ID, именем, версией и платформами.
+[packages.test.mjs](../tests/packages.test.mjs) uses actual package sources.
+It checks that the packer works from another working directory, IDs are unique,
+scripts parse successfully, and catalog install URLs point to existing local
+packages with matching IDs, names, versions, and platforms.
 
-Тесты этой репы не запускают Worker или native gateway. В репозитории **Player**
-выполняются интеграционные проверки, например:
+This repository's tests do not run the Worker or native gateway. Integration checks
+run in the **Player** repository, for example:
 
 ```sh
 pnpm test:plugins
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
 
-## Связь с Player
+## Player integration
 
-В Player `plugins/` — git submodule, закреплённый на конкретном коммите этой репы.
-Соседний checkout `../player-plugins` и checkout `Player/plugins/` независимы:
-изменение файлов в первом автоматически не меняет второй.
+In Player, `plugins/` is a git submodule pinned to a specific commit of this repository.
+A sibling `../player-plugins` checkout and `Player/plugins/` are independent:
+editing files in the former does not automatically update the latter.
 
-Для первоначальной сборки выполните из корня **Player**:
+Before building Player for the first time, run this from the **Player** root:
 
 ```sh
 git submodule update --init -- plugins
 ```
 
-Чтобы включить новую версию встроенных пакетов в сборку, сначала опубликуйте её
-в этой репе, затем из корня **Player**:
+To include updated bundled packages in a build, publish their changes to this
+repository first, then run these commands from the **Player** root:
 
 ```sh
 git -C plugins fetch origin main
@@ -66,10 +66,11 @@ git add plugins
 git commit -m "Update bundled plugins"
 ```
 
-После этого проверьте Player и опубликуйте его коммит обычным способом. Его release
-workflow получает закреплённый submodule; изменения `main` этой репы не подменяют
-код уже собранного приложения. Обновление только `catalog.json` становится доступно
-без обновления gitlink и сборки Player.
+Test Player and publish its commit through the usual workflow. Its release workflow
+fetches the pinned submodule; changes to this repository's `main` do not replace
+code in an already built app. Changes only to `catalog.json` become available
+without updating the gitlink or rebuilding Player.
 
-Runtime, UI renderer и native-адаптеры остаются в Player. Пакеты `player.discord-rpc`
-и `player.soulseek` нельзя переустановить как обычные внешние `.player-plugin`.
+The runtime, UI renderer, and native adapters remain in Player. Packages
+`player.discord-rpc` and `player.soulseek` cannot be reinstalled as ordinary
+external `.player-plugin` files.
