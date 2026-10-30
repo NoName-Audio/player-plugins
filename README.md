@@ -1,20 +1,28 @@
 # Player plugins
 
-Пакеты расширений, SDK, примеры и каталог для [Player](https://github.com/verncat/player).
+Исходники расширений для [Player](https://github.com/verncat/player): встроенные
+Discord RPC и Soulseek, устанавливаемый JavaScript-пример, Android APK-пример,
+SDK и публичный каталог.
 
-| Путь | Содержимое |
+## Что где лежит
+
+| Путь | Назначение |
 | --- | --- |
-| `catalog.json` | Список устанавливаемых расширений, который Player получает по HTTPS |
-| `discord-rpc/` | Пакет Discord Rich Presence для desktop |
-| `soulseek/` | Поиск, предпрослушивание, загрузка и замена треков через Soulseek |
-| `examples/hello/` | Устанавливаемый JavaScript-пример |
-| `examples/android-native/` | Самостоятельный Android APK с Kotlin и Rust JNI |
-| `sdk.d.ts` | Типы API плагина, версия 1 |
-| `scripts/` | Упаковка JavaScript-пакета и сборка Rust для Android |
+| [discord-rpc/](discord-rpc/README.md) | Пакет Discord Rich Presence для desktop |
+| [soulseek/](soulseek/README.md) | Пакет поиска, предпрослушивания и загрузки музыки |
+| [examples/hello/](examples/hello/README.md) | Образец обычного устанавливаемого плагина |
+| [examples/android-native/](examples/android-native/README.md) | Отдельный Android APK с Kotlin и Rust JNI |
+| [sdk.d.ts](sdk.d.ts) | Типы API плагинов, версия 1 |
+| [catalog.json](catalog.json) | Список расширений для Settings → Plugins |
+| [scripts/](docs/tooling.md) | Упаковка JavaScript и сборка Rust для Android |
+| [docs/](docs/README.md) | Руководства разработчика и сопровождающего |
 
-## Разработка
+Полное дерево с назначением файлов: [структура репозитория](docs/structure.md).
 
-Нужны Node.js 20+ и pnpm. Исходники плеера для упаковки JavaScript-плагина не нужны.
+## Начать работу
+
+Нужны Node.js 20+ и pnpm. Для упаковки JavaScript-плагина исходники Player не нужны.
+Все команды ниже выполняются из корня **player-plugins**.
 
 ```sh
 git clone https://github.com/verncat/player-plugins.git
@@ -25,43 +33,17 @@ pnpm test:plugin-sdk
 pnpm plugins:pack examples/hello /tmp/hello.player-plugin
 ```
 
-Установите файл через Settings → Plugins либо вставьте ссылку:
+Установите файл через Settings → Plugins или используйте ссылку
 `https://github.com/verncat/player-plugins/tree/main/examples/hello`.
-[Руководство разработчика](docs/development.md) описывает manifest, разрешения и API.
-[Android-пример](examples/android-native/README.md) собирается собственным Gradle wrapper
-из этой репы и не требует Gradle-проекта Player.
 
-## Каталог
+## Документация
 
-Player запрашивает `https://raw.githubusercontent.com/verncat/player-plugins/main/catalog.json`.
-Репозиторий должен быть публичным. Коннектор, авторизация и кеш каталога не используются.
+- [Создать плагин](docs/development.md): папка, manifest, код, упаковка и установка.
+- [SDK и UI](docs/sdk.md): жизненный цикл, вызовы API и элементы интерфейса.
+- [Опубликовать в каталоге](docs/catalog.md): формат JSON и добавление записи.
+- [Инструменты и связь с Player](docs/tooling.md): команды, проверки, submodule и обновления.
 
-Для публикации расширения добавьте его папку с `plugin.json` и `main.js`, затем запись
-в `catalog.json`: ID, имя, описание, repository, installUrl, дата добавления и платформы.
-`installUrl` указывает на папку плагина в `main` или на готовый `.player-plugin`.
-Увеличьте `updatedAt` каталога и изменённой записи, запустите проверки и запушьте в `main`.
-Список обновляется в Player без новой сборки приложения. Каталог не выдаёт разрешения:
-при установке Player проверяет настоящий пакет и запрашивает подтверждение.
-
-Discord и Soulseek используют зарезервированные `player.*` ID и поставляются с Player.
-Их исходники находятся здесь, но они не включены в каталог внешних пакетов.
-Android APK устанавливается через Android, после чего подключается через Find APK plugins.
-
-## Связь с Player
-
-В репозитории Player папка `plugins/` — git submodule этой репы, закреплённый на
-конкретном коммите. Сборка включает Discord/Soulseek из этой закреплённой версии;
-обновление удалённого каталога не меняет встроенный код. Runtime, UI renderer,
-проверка пакетов, Rust-адаптеры и интеграционные тесты остаются в Player.
-
-Чтобы обновить встроенные пакеты, из репозитория Player выполните:
-
-```sh
-git submodule update --init -- plugins
-git -C plugins fetch origin main
-git -C plugins checkout --detach origin/main
-git add plugins
-git commit -m "Update bundled plugins"
-```
-
-Спецификации хоста: [docs/plugins/scope](https://github.com/verncat/player/tree/feat/plugins/docs/plugins/scope).
+Player загружает каталог из
+`https://raw.githubusercontent.com/verncat/player-plugins/main/catalog.json`.
+Discord/Soulseek поставляются вместе с Player из закреплённого коммита этой репы;
+runtime и Rust-адаптеры находятся в репозитории плеера.
