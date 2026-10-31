@@ -1,6 +1,6 @@
 # Soulseek
 
-Bundled native package `player.soulseek`, for desktop and Android.
+Independent native package `player.soulseek`, for desktop and Android.
 Rust implements its UI, search, pagination, cover scheduling, preview, import,
 replacement actions, and persistent transfer intentions.
 
@@ -19,20 +19,17 @@ replacement actions, and persistent transfer intentions.
 | `find-replacement` | Track-menu action opening the internal page |
 | `buffer` | Transfer status in `player.status` |
 
-The plugin uses Player's Rust `soulseek.*` services for network operations. Preview
-plays a host-issued source token once buffered; completed transfers import or replace
-tracks and adopt the result in Player's playback state. Generation-scoped intentions
-persist in settings so the native instance can recover after a UI reconnect.
-Passwords use the host credential provider. Background cover calls do not block render.
+The package owns its network client, Tokio runtime, transfers and cover downloads in
+[src/service.rs](src/service.rs). The modified protocol client is preserved under
+[vendor/soulseek-rs-lib](vendor/soulseek-rs-lib). Player contains neither dependency.
+Generic host storage/media services issue source tokens for staged downloads; normal
+library import/replacement APIs save completed files. Credentials use host secrets.
+Workers queue completion events; pollIntervalMs drains them on serialized native calls.
 
-Host service source:
-[soulseek.rs](https://github.com/verncat/player/blob/feat/plugins/src-tauri/src/plugins/soulseek.rs).
-Permissions: `ui`, `settings`, `secrets`, `playback.read`, `playback.control`,
-`native.soulseek`, `library.import`, `library.replace`.
+Desktop: install the compiled package from the catalog. Android: install the separate
+[APK](android/README.md), then select Find APK plugins in Player. Disabling cancels
+owned tasks. Uninstallation follows the normal plugin manager flow.
 
-Run `cargo test -p player-soulseek-plugin`. Tests cover paging without dropped matches,
-track-menu navigation, buffered preview, import after instance recovery, failed
-transfers, and stale intentions. Live network checks remain separate.
-Update this bundled package through the [Player submodule](../docs/tooling.md#player-integration).
-
-[Documentation](../docs/README.md) · [Native SDK](../docs/sdk.md)
+Run `cargo test -p player-soulseek-plugin`. Offline tests cover pagination, navigation,
+preview/import intentions, status without credential prompts and remote path validation.
+Live network/account behavior needs separate testing. See [SDK](../docs/sdk.md).

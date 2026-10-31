@@ -5,6 +5,15 @@ fn build() -> Result<(), Box<dyn std::error::Error>> {
     let folder =
         PathBuf::from(args.next().ok_or("Missing Android plugin directory")?).canonicalize()?;
     let abis = args.next().unwrap_or_else(|| "arm64-v8a".into());
+    let library = args
+        .next()
+        .unwrap_or_else(|| "player_native_example".into());
+    if !library
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    {
+        return Err("Invalid library name".into());
+    }
     let sdk = PathBuf::from(
         std::env::var("ANDROID_HOME").or_else(|_| std::env::var("ANDROID_SDK_ROOT"))?,
     );
@@ -68,10 +77,8 @@ fn build() -> Result<(), Box<dyn std::error::Error>> {
         let destination = folder.join("build/generated/jniLibs").join(abi);
         std::fs::create_dir_all(&destination)?;
         std::fs::copy(
-            output
-                .join(target)
-                .join("release/libplayer_native_example.so"),
-            destination.join("libplayer_native_example.so"),
+            output.join(target).join(format!("release/lib{library}.so")),
+            destination.join(format!("lib{library}.so")),
         )?;
     }
     Ok(())

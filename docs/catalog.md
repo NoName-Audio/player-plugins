@@ -16,13 +16,11 @@ There is no bundled fallback or disk cache. Errors clear the listing and appear 
 }
 ```
 
-The catalog is initially empty because the previous Hello entry installed source
-JavaScript. Add a native entry only after its compiled artifact URL is published.
-Discord/Soulseek remain bundled packages; Android APKs are installed through Android
-and connected through Find APK plugins.
+Official Discord and Soulseek entries are generated from successfully published
+native release assets. An empty catalog is valid before the first release.
 
 Each entry requires `id`, `name`, `description`, `repository`, `addedAt`, and `platforms`.
-Optional fields are `installUrl`, `updatedAt`, `version`, `author`, `image`, and `tags`.
+Optional fields are `installUrl`, `updatedAt`, `version`, `author`, `image`, `androidApkUrl`, and `tags`.
 `installUrl` should point to a built `.player-plugin`; a GitHub directory must contain
 `plugin.player-plugin`. A source manifest alone is insufficient. Without installUrl,
 Player uses repository. Metadata follows the [manifest rules](development.md#manifest-rules).
@@ -45,5 +43,7 @@ Player verifies the selected ID and content fingerprint, then requests approval 
 installation. Library code is loaded only on enable. Native plugins execute with Player's
 system access; the fingerprint verifies content, not publisher identity.
 
-Publishing the catalog does not update installed or bundled code. Bundled updates use
-the [Player submodule](tooling.md#player-integration).
+Publishing the catalog does not update installed code. On Android, `androidApkUrl`
+is an HTTPS APK download link and requires the android platform tag. Download APK
+opens it externally; install with Android, then use Find APK plugins to approve the
+installed APK identity. See the [release pipeline](tooling.md#release-pipeline).

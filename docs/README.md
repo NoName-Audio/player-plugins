@@ -9,7 +9,7 @@ Commands and paths refer to the `player-plugins` root unless **Player** is expli
 | Implement lifecycle, UI, events, and host calls | [SDK and ABI](sdk.md) |
 | Publish a compiled native package | [Catalog](catalog.md) |
 | Run tools, checks, and update Player's submodule | [Tooling](tooling.md) |
-| Understand the bundled integrations | [Discord](../discord-rpc/README.md), [Soulseek](../soulseek/README.md) |
+| Understand the independent integrations | [Discord](../discord-rpc/README.md), [Soulseek](../soulseek/README.md) |
 | Run a native library example | [Hello](../examples/hello/README.md) |
 | Build an Android APK with Rust | [Android native](../examples/android-native/README.md) |
 

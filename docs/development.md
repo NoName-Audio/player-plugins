@@ -71,7 +71,7 @@ returned data and forwards approved requests. No executable script is packaged.
 
 | Field | Rule |
 | --- | --- |
-| `id` | Up to 100 ASCII characters, dot-separated `[a-z0-9-]` parts; `player.*` is reserved |
+| `id` | Up to 100 ASCII characters, dot-separated `[a-z0-9-]` parts; official IDs are installable too |
 | `name` | Nonempty, up to 100 UTF-8 bytes |
 | `version` | Three nonnegative integers: `major.minor.patch` |
 | `apiVersion` | Exactly `2` |
@@ -87,8 +87,8 @@ Unknown fields are rejected. For settings-menu logo tinting, use a transparent i
 Cards retain the image's original colors.
 
 Host permissions are `ui`, `settings`, `secrets`, `playback.read`, `playback.control`,
-`network.http`, `library.import`, and `library.replace`. `native.discord` and
-`native.soulseek` are reserved for bundled packages. `native.android` requires an
+`network.http`, `storage`, `media.source`, `library.import`, and `library.replace`.
+Provider-specific native permissions are not supported. `native.android` requires an
 installed APK binding created by Player, not a manually supplied source manifest value.
 Native code has Player's OS access; these capabilities protect host API routing,
 not the process from the native plugin.
@@ -138,5 +138,5 @@ JNI library was loaded.
 
 API 1 script packages are rejected. Migration removes their installed executable
 packages while preserving settings records and credentials; those records are disabled
-so a native replacement can be installed under the same ID. Bundled package IDs retain
-their settings. [Catalog publication](catalog.md) is separate from package installation.
+so a native replacement can be installed under the same ID. Former built-in package IDs retain
+their settings and credentials, but require installing a standalone package. [Catalog publication](catalog.md) is separate from package installation.

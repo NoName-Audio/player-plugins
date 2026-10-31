@@ -43,7 +43,10 @@ outside Player's dispatcher. Native calls cannot be forcibly killed safely in-pr
 | `host.background` | Start an asynchronous host capability call; see below |
 | `http.request`, `http.download` | Network operations through the host |
 | `library.import`, `library.replace` | Import a host-issued source token |
-| `discord.*`, `soulseek.*` | Bundled native adapter services |
+| `storage.staging` | With `storage`: own canonical staging directory `{path}` |
+| `media.register` | With `media.source`: register owned `{path, resource, state}` → source token |
+| `media.state` | Update transfer `{path, state}` for owned staging media |
+| `media.cover` | Store an owned staging image `{path}` → cover hash |
 
 `settings.update` replaces the settings object with the expected revision. Read the
 latest revision after a conflict. Store credentials with `secrets`, not settings/logs.
@@ -53,8 +56,18 @@ registered-page and capability checks.
 
 For background work, call `host.background` with `{id, topic, method, args}`. It returns
 immediately; the plugin later receives `event` with that topic and a payload
-`{id, result, error?}`. Host capability checks still apply. Soulseek uses this to fetch
-covers without blocking search/render, keeping at most two cover requests active.
+`{id, result, error?}`. Host capability checks still apply. Soulseek owns its network runtime and queues completions internally, rather than
+calling a provider-specific host service.
+
+## Native background work
+
+Optional manifest `pollIntervalMs` (50–60000 milliseconds) requests serialized
+`poll` calls while the activation is alive. Workers enqueue results using owned Rust
+state; drain them during `poll` and call the scoped host there. Never retain a Host
+callback on a worker thread. Disable stops scheduling and the plugin stops its workers.
+Media paths must resolve inside the current plugin staging directory; symlink escapes
+and other plugins’ files are rejected. Transfer states are active, completed, failed,
+timed_out, or cancelled. Completed library imports use the normal source-token API.
 
 ## UI and contributions
 

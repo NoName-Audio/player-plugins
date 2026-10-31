@@ -10,12 +10,8 @@ fn pack() -> Result<(), Box<dyn std::error::Error>> {
     )?);
     let output = PathBuf::from(args.next().ok_or("Missing output path")?);
     let manifest: Value = serde_json::from_slice(&std::fs::read(folder.join("plugin.json"))?)?;
-    if manifest["apiVersion"] != 2
-        || manifest["id"]
-            .as_str()
-            .is_none_or(|id| id.starts_with("player."))
-    {
-        return Err("Only external native API 2 packages can be packed".into());
+    if manifest["apiVersion"] != 2 || manifest["id"].as_str().is_none_or(|id| id.is_empty()) {
+        return Err("Only native API 2 packages with an ID can be packed".into());
     }
     let mut artifacts = BTreeMap::new();
     for artifact in args {

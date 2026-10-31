@@ -1,9 +1,11 @@
+mod adapter;
 use player_plugin_sdk::{Host, NativePlugin, Result};
 use serde_json::{json, Value};
 
 #[derive(Default)]
 pub struct Plugin {
     error: String,
+    adapter: adapter::Adapter,
 }
 impl NativePlugin for Plugin {
     fn call(&mut self, method: &str, args: Value, host: &dyn Host) -> Result {
@@ -15,10 +17,7 @@ impl NativePlugin for Plugin {
                 } else {
                     Value::Null
                 };
-                self.error = host
-                    .call("discord.update", json!({"playback":playback}))
-                    .err()
-                    .unwrap_or_default();
+                self.error = self.adapter.update(playback).err().unwrap_or_default();
                 host.invalidate();
                 Ok(Value::Null)
             }
@@ -31,7 +30,10 @@ impl NativePlugin for Plugin {
                 }
                 Ok(json!({"type":"group","title":"Discord Rich Presence","children":children}))
             }
-            "deactivate" => host.call("discord.update", json!({"playback":null})),
+            "deactivate" => {
+                self.adapter.shutdown();
+                Ok(Value::Null)
+            }
             _ => Err("METHOD_NOT_FOUND".into()),
         }
     }
@@ -44,30 +46,12 @@ mod tests {
     use super::*;
     use player_plugin_sdk::testing::TestHost;
     #[test]
-    fn pause_clears_presence_and_errors_are_rendered() {
-        let host = TestHost::new(|_, _| Ok(Value::Null));
-        let mut plugin = Plugin::default();
-        plugin
-            .call("playback", json!({"playing":true,"title":"Song"}), &host)
-            .unwrap();
-        plugin
-            .call("playback", json!({"playing":false,"title":"Song"}), &host)
-            .unwrap();
-        assert!(host
-            .calls
-            .borrow()
-            .iter()
-            .filter(|(m, _)| m == "discord.update")
-            .last()
-            .unwrap()
-            .1["playback"]
-            .is_null());
-        let failed = TestHost::new(|_, _| Err("Discord disconnected".into()));
-        plugin
-            .call("playback", json!({"playing":true}), &failed)
-            .unwrap();
+    fn native_ui_renders_transport_errors() {
+        let h = TestHost::new(|_, _| Ok(Value::Null));
+        let mut p = Plugin::default();
+        p.error = "Discord disconnected".into();
         assert_eq!(
-            plugin.call("render", json!({}), &failed).unwrap()["children"][1]["text"],
+            p.call("render", json!({}), &h).unwrap()["children"][1]["text"],
             "Discord disconnected"
         );
     }

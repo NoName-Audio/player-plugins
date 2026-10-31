@@ -1,0 +1,137 @@
+name: Publish native plugins
+on:
+  push:
+    tags: ['native-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing native-v* tag to build'
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: native-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: macos-aarch64
+            rust-target: aarch64-apple-darwin
+            prefix: lib
+            extension: dylib
+          - os: macos-15-intel
+            target: macos-x86_64
+            rust-target: x86_64-apple-darwin
+            prefix: lib
+            extension: dylib
+          - os: ubuntu-22.04
+            target: linux-x86_64
+            rust-target: x86_64-unknown-linux-gnu
+            prefix: lib
+            extension: so
+          - os: ubuntu-22.04-arm
+            target: linux-aarch64
+            rust-target: aarch64-unknown-linux-gnu
+            prefix: lib
+            extension: so
+          - os: windows-latest
+            target: windows-x86_64
+            rust-target: x86_64-pc-windows-msvc
+            prefix: ''
+            extension: dll
+          - os: windows-11-arm
+            target: windows-aarch64
+            rust-target: aarch64-pc-windows-msvc
+            prefix: ''
+            extension: dll
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+      - run: cargo build --locked --release --target ${{ matrix.rust-target }} -p player-discord-plugin -p player-soulseek-plugin
+      - name: Package native libraries
+        env:
+          TARGET_KEY: ${{ matrix.target }}
+          RUST_TARGET: ${{ matrix.rust-target }}
+          LIB_PREFIX: ${{ matrix.prefix }}
+          LIB_EXTENSION: ${{ matrix.extension }}
+        run: |
+          mkdir -p dist
+          cargo run --locked -p player-plugin-sdk --bin player-plugin-pack -- discord-rpc "dist/player.discord-rpc-${TARGET_KEY}.player-plugin" "${TARGET_KEY}=target/${RUST_TARGET}/release/${LIB_PREFIX}player_discord_plugin.${LIB_EXTENSION}"
+          cargo run --locked -p player-plugin-sdk --bin player-plugin-pack -- soulseek "dist/player.soulseek-${TARGET_KEY}.player-plugin" "${TARGET_KEY}=target/${RUST_TARGET}/release/${LIB_PREFIX}player_soulseek_plugin.${LIB_EXTENSION}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.target }}
+          path: dist/*.player-plugin
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+      - name: Install Android toolchain
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;29.0.13846066'
+      - name: Build independent Soulseek APK
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/29.0.13846066"
+          ./gradlew -p soulseek/android assembleDebug -PpluginAbis=arm64-v8a,armeabi-v7a,x86_64,x86
+      - name: Collect APK
+        run: |
+          mkdir -p dist
+          cp soulseek/android/build/outputs/apk/debug/*.apk dist/player.soulseek.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-android
+          path: dist/player.soulseek.apk
+  publish:
+    needs: [desktop, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Merge verified native packages
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: python3 tools/merge-packages.py artifacts dist --tag "$RELEASE_TAG"
+      - name: Publish release before exposing catalog links
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --draft --title "Native plugins ${RELEASE_TAG}" --notes 'Independent native Discord and Soulseek extensions. Desktop packages contain macOS, Windows and Linux libraries. The Android APK is an experimental debug-signed build; production update distribution requires a persistent release signing key.'
+          gh release upload "$RELEASE_TAG" dist/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false
+      - name: Publish catalog
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add catalog.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'Update catalog with published native plugin packages'
+            git push origin main
+          fi

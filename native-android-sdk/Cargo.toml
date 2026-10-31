@@ -1,0 +1,8 @@
+[package]
+name = "player-plugin-android-sdk"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+player-plugin-sdk.workspace = true
+jni = "0.21"
+serde_json.workspace = true

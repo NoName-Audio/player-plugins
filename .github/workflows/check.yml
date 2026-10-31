@@ -13,3 +13,5 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace --locked
       - run: cargo build --workspace --locked
+      - run: python3 -m unittest discover -s tools -p 'test_*.py'
+        if: runner.os == 'Linux'

@@ -13,6 +13,9 @@ ffi = []
 [dependencies]
 player-plugin-sdk.workspace = true
 serde_json.workspace = true
+serde = { version = "1", features = ["derive"] }
+discord-rich-presence = "1.1"
+tracing = "0.1"
 
 [dev-dependencies]
 player-plugin-sdk = { workspace = true, features = ["testing"] }

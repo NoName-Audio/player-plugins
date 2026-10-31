@@ -1,9 +1,11 @@
+mod service;
 use player_plugin_sdk::{Host, NativePlugin, Result};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Default)]
 pub struct Plugin {
+    service: std::sync::Arc<std::sync::Mutex<service::Service>>,
     config: Value,
     has_password: bool,
     error: String,
@@ -448,8 +450,8 @@ impl Plugin {
         }
     }
 }
-impl NativePlugin for Plugin {
-    fn call(&mut self, method: &str, args: Value, host: &dyn Host) -> Result {
+impl Plugin {
+    fn handle(&mut self, method: &str, args: Value, host: &dyn Host) -> Result {
         let result = match method {
             "activate" => {
                 self.generation = args["generation"].as_u64().unwrap_or(0);
@@ -564,6 +566,49 @@ impl NativePlugin for Plugin {
         result
     }
 }
+impl NativePlugin for Plugin {
+    fn call(&mut self, method: &str, args: Value, host: &dyn Host) -> Result {
+        let services = service::Services {
+            service: self.service.clone(),
+            host,
+        };
+        if method == "activate" {
+            self.service
+                .lock()
+                .map_err(|e| e.to_string())?
+                .activate(host)?;
+        }
+        if method == "deactivate" {
+            self.service.lock().map_err(|e| e.to_string())?.close();
+            return Ok(Value::Null);
+        }
+        if method == "poll" {
+            let events = self.service.lock().map_err(|e| e.to_string())?.drain();
+            for mut event in events {
+                if event["topic"] == "soulseek-cover" {
+                    if let Some(path) = event["payload"]["path"].as_str() {
+                        event["payload"]["result"] = host
+                            .call("media.cover", json!({"path":path}))
+                            .unwrap_or(Value::Null);
+                    }
+                } else if let Some(path) = event["payload"]["localPath"].as_str() {
+                    let state = event["payload"]["state"].as_str().unwrap_or("active");
+                    let state =
+                        if ["completed", "failed", "cancelled", "timed_out"].contains(&state) {
+                            state
+                        } else {
+                            "active"
+                        };
+                    host.call("media.state", json!({"path":path,"state":state}))?;
+                }
+                self.handle("event", event, &services)?;
+            }
+            return Ok(Value::Null);
+        }
+        self.handle(method, args, &services)
+    }
+}
+
 #[cfg(feature = "ffi")]
 player_plugin_sdk::export_plugin!(Plugin, "player.soulseek");
 
@@ -588,12 +633,12 @@ mod tests {
     fn search_cursors_preserve_all_matches_and_replacement_opens_internal_page() {
         let h = host();
         let mut p = Plugin::default();
-        p.call("activate", json!({"generation":3}), &h).unwrap();
+        p.handle("activate", json!({"generation":3}), &h).unwrap();
         let mut cursor = Value::Null;
         let mut ids = BTreeSet::new();
         loop {
             let page = p
-                .call(
+                .handle(
                     "search",
                     json!({"query":"Song","cursor":cursor,"limit":120}),
                     &h,
@@ -609,7 +654,7 @@ mod tests {
         }
         assert_eq!(ids.len(), 250);
         assert_eq!(h.count("soulseek.search"), 1);
-        p.call(
+        p.handle(
             "action",
             json!({"action":"find-replacement","payload":{"track":{"id":12,"title":"Song"}}}),
             &h,
@@ -619,32 +664,32 @@ mod tests {
             && a["pageId"] == "replacement"
             && a["context"]["track"]["id"] == 12));
         assert!(p
-            .call("search", json!({"query":"Song","cursor":"invalid"}), &h)
+            .handle("search", json!({"query":"Song","cursor":"invalid"}), &h)
             .is_err());
     }
     #[test]
     fn native_preview_plays_buffer_and_save_survives_instance_reload() {
         let h = host();
         let mut p = Plugin::default();
-        p.call("activate", json!({"generation":7}), &h).unwrap();
-        p.call("search", json!({"query":"Song"}), &h).unwrap();
+        p.handle("activate", json!({"generation":7}), &h).unwrap();
+        p.handle("search", json!({"query":"Song"}), &h).unwrap();
         let r = result(0);
         let id = key(&r);
-        p.call(
+        p.handle(
             "action",
             json!({"action":"play","payload":{"resourceId":id}}),
             &h,
         )
         .unwrap();
         let progress = json!({"username":"peer","filename":r["filename"],"state":"progress","localPath":"partial.mp3","bytesDownloaded":500_000});
-        p.call(
+        p.handle(
             "event",
             json!({"topic":"soulseek-preview","payload":progress}),
             &h,
         )
         .unwrap();
         assert_eq!(h.count("host.play"), 1);
-        p.call(
+        p.handle(
             "action",
             json!({"action":"save","payload":{"resourceId":id}}),
             &h,
@@ -653,12 +698,12 @@ mod tests {
         assert_eq!(h.count("soulseek.preview"), 1);
         let mut reloaded = Plugin::default();
         reloaded
-            .call("activate", json!({"generation":7}), &h)
+            .handle("activate", json!({"generation":7}), &h)
             .unwrap();
         let completed = json!({"username":"peer","filename":r["filename"],"state":"completed","localPath":"complete.mp3","bytesDownloaded":10_000_000});
         for _ in 0..2 {
             reloaded
-                .call(
+                .handle(
                     "event",
                     json!({"topic":"soulseek-preview","payload":completed}),
                     &h,
@@ -676,20 +721,22 @@ mod tests {
     fn failed_transfers_clear_intents_and_stale_generations_do_not_restore_them() {
         let h = host();
         let mut p = Plugin::default();
-        p.call("activate", json!({"generation":1}), &h).unwrap();
-        p.call("search", json!({"query":"Song"}), &h).unwrap();
+        p.handle("activate", json!({"generation":1}), &h).unwrap();
+        p.handle("search", json!({"query":"Song"}), &h).unwrap();
         let r = result(0);
         let id = key(&r);
-        p.call(
+        p.handle(
             "action",
             json!({"action":"save","payload":{"resourceId":id}}),
             &h,
         )
         .unwrap();
         let mut fresh = Plugin::default();
-        fresh.call("activate", json!({"generation":2}), &h).unwrap();
+        fresh
+            .handle("activate", json!({"generation":2}), &h)
+            .unwrap();
         assert!(fresh.pending_save.is_empty());
-        p.call("event",json!({"topic":"soulseek-preview","payload":{"username":"peer","filename":r["filename"],"state":"failed","error":"Peer offline"}}),&h).unwrap();
+        p.handle("event",json!({"topic":"soulseek-preview","payload":{"username":"peer","filename":r["filename"],"state":"failed","error":"Peer offline"}}),&h).unwrap();
         assert!(p.pending_save.is_empty());
         assert!(h.settings.borrow()["values"]["transferIntents"]
             .as_array()

@@ -17,16 +17,23 @@ player-plugins/
 │       └── bin/
 │           ├── player-plugin-pack.rs  # compiled libraries → .player-plugin
 │           └── player-plugin-android-build.rs # Cargo/NDK helper used by Gradle
+├── native-android-sdk/                # reusable JNI host callbacks and export macro
+├── tools/                             # verified release merger and Python tests
+├── .github/workflows/release.yml      # independent binary releases and catalog publication
 ├── discord-rpc/
 │   ├── README.md                      # behavior and file map
 │   ├── Cargo.toml                     # rlib/cdylib; optional ffi exports
 │   ├── plugin.json                    # metadata, permissions, settings contribution
+│   ├── src/adapter.rs                 # package-owned Discord IPC worker
 │   ├── src/lib.rs                     # native playback handler and UI
 │   └── assets/                        # Discord SVG/PNG and attribution README
 ├── soulseek/
 │   ├── README.md                      # behavior and file map
 │   ├── Cargo.toml                     # native package crate
 │   ├── plugin.json                    # settings/search/menu/widget contributions
+│   ├── src/service.rs                 # own runtime, client and transfer workers
+│   ├── vendor/soulseek-rs-lib/         # modified protocol client
+│   ├── android/                       # independent Kotlin/JNI Soulseek APK
 │   ├── src/lib.rs                     # UI, search, transfer intentions, preview/import
 │   └── assets/                        # Soulseek PNG and attribution README
 ├── examples/
@@ -60,9 +67,9 @@ The manifest's ID must match the ID exported by its compiled library. `assets/`
 contains image sources and attribution; relative asset paths are not supported in
 manifest `image`, so use an HTTP(S) URL or an embedded raster data URL.
 
-`rlib` builds allow bundled packages to link directly into Player. The default
-`ffi` feature exports the C ABI for a separate `cdylib`. Player disables that
-feature when linking Discord/Soulseek, preventing duplicate exported symbols.
+The default `ffi` feature exports the desktop C ABI from each `cdylib`.
+Android wrappers use the same Rust package as an `rlib` with FFI exports disabled.
+Player links neither provider crate.
 
 New crates must be added to the root workspace's `members`. Keep package IDs stable
 across updates. Source directories alone are not installable: publish compiled libraries
@@ -85,8 +92,8 @@ Generated outputs are ignored by Git. The root `Cargo.lock` and Gradle wrapper a
 ## Boundary with Player
 
 Player owns loading, package approval, registry/settings/secrets, UI rendering,
-playback coordination, and the native capability gateway. Its Rust Discord/Soulseek
-network adapters remain host services used by these native packages.
+playback coordination, and the native capability gateway. Provider IPC, network clients, and background workers live entirely in the
+independently built packages.
 The APK example's Rust code belongs to the separately installed APK.
 
 In Player, this repository is the pinned `plugins/` submodule.

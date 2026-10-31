@@ -51,18 +51,23 @@ Discord/Soulseek services and signed release builds require their platform check
 git submodule update --init -- plugins
 ```
 
-To update bundled code after publishing a tested plugin commit:
+Player depends only on `native-sdk`; provider crates and their network/IPC dependencies
+are absent from its Cargo graph. Updating this submodule updates the shared SDK source,
+not installed provider code. Install provider updates through the normal package flow.
 
-```sh
-git -C plugins fetch origin main
-git -C plugins checkout --detach origin/main
-git add plugins
-git commit -m "Update bundled native plugins"
-```
+## Release pipeline
 
-Player links Discord/Soulseek Rust crates with default FFI exports disabled. External
-plugins use the dynamic loader instead. Release CI must fetch the pinned submodule
-before Cargo resolves these path dependencies.
+Push a `native-v*` tag to run [release.yml](../.github/workflows/release.yml).
+It builds both desktop packages for six OS/CPU targets and a standalone four-ABI
+Soulseek Android APK. [merge-packages.py](../tools/merge-packages.py) verifies binary
+hashes and matching manifests before merging target packages. Release assets are
+uploaded before the generated catalog is committed to main; failed builds leave the
+catalog unchanged. Run `python3 -m unittest discover -s tools -p 'test_*.py'` locally.
+
+The APK is currently an experimental debug-signed build. CI debug keys are ephemeral;
+updates from another signer may require uninstall/reinstall. Production APK updates
+require a persistent release signing key configured separately. No Player rebuild is
+needed for either desktop package installation or APK discovery.
 
 On macOS, hardened release binaries retain their normal library signature validation.
 This implementation does not add an entitlement disabling it. Native artifacts must

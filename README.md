@@ -7,8 +7,8 @@ JavaScript plugin runtime, `main.js`, or script SDK.
 | Path | Purpose |
 | --- | --- |
 | [native-sdk/](docs/sdk.md) | Rust trait, C ABI 1, packaging and Android build tools |
-| [discord-rpc/](discord-rpc/README.md) | Bundled native Discord package |
-| [soulseek/](soulseek/README.md) | Bundled native search, preview, and import package |
+| [discord-rpc/](discord-rpc/README.md) | Independent native Discord package |
+| [soulseek/](soulseek/README.md) | Independent native search, preview, and import package |
 | [examples/hello/](examples/hello/README.md) | Installable desktop native library example |
 | [examples/android-native/](examples/android-native/README.md) | Standalone Kotlin/Rust APK example |
 | [catalog.json](catalog.json) | Public native package listing, schema 2 |
@@ -43,8 +43,10 @@ Android extensions are separately installed APKs with Kotlin entrypoints and Rus
 Both receive lifecycle, render, action, search, playback, and event requests.
 Player renders returned UI data using its shared components and theme.
 
-Discord/Soulseek are Rust packages linked into Player from a pinned commit of this
-repository. External native libraries can be installed without rebuilding Player.
+Discord and Soulseek are separately installed native packages. Their IPC/network
+implementations and dependencies are built here, never linked into Player. Player
+uses only the generic SDK from its pinned submodule. Install or update plugins
+without rebuilding Player.
 On hardened macOS builds, libraries must satisfy the app's existing signature validation;
 this change does not disable library validation.
 

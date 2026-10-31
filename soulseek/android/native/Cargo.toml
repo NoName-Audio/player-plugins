@@ -1,0 +1,9 @@
+[package]
+name = "player-soulseek-android"
+version = "1.0.0"
+edition = "2021"
+[lib]
+crate-type = ["cdylib"]
+[dependencies]
+player-soulseek-plugin = { path = "../..", default-features = false }
+player-plugin-android-sdk = { path = "../../../native-android-sdk" }

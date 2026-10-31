@@ -23,8 +23,8 @@ val buildPluginRust by tasks.registering(Exec::class) {
     inputs.file("native/Cargo.toml")
     inputs.file("../../Cargo.lock")
     inputs.dir("../../native-sdk/src")
+    inputs.dir("../../native-android-sdk/src")
     inputs.property("pluginAbis", pluginAbis)
-    inputs.dir("../../native-sdk/src")
     outputs.dir(layout.buildDirectory.dir("generated/jniLibs"))
     commandLine("cargo", "run", "--locked", "--manifest-path", "../../Cargo.toml", "-p", "player-plugin-sdk", "--bin", "player-plugin-android-build", "--", projectDir.absolutePath, pluginAbis.joinToString(","))
 }
