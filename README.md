@@ -1,6 +1,6 @@
 # Player native plugins
 
-Native extensions for [Player](https://github.com/verncat/player). All plugin logic,
+Native extensions for [Player](https://github.com/NoName-Audio/player). All plugin logic,
 including UI descriptions and actions, runs in compiled native code. There is no
 JavaScript plugin runtime, `main.js`, or script SDK.
 
@@ -51,7 +51,7 @@ On hardened macOS builds, libraries must satisfy the app's existing signature va
 this change does not disable library validation.
 
 The catalog endpoint is
-`https://raw.githubusercontent.com/verncat/player-plugins/main/catalog.json`.
+`https://raw.githubusercontent.com/NoName-Audio/player-plugins/main/catalog.json`.
 Legacy script packages are not listed. Publish compiled native artifacts before adding
 entries; see [catalog publishing](docs/catalog.md).
 

@@ -120,7 +120,8 @@ jobs:
       - name: Merge verified native packages
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: python3 tools/merge-packages.py artifacts dist --tag "$RELEASE_TAG"
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: python3 tools/merge-packages.py artifacts dist --tag "$RELEASE_TAG" --repository "$RELEASE_REPOSITORY"
       - name: Publish release before exposing catalog links
         env:
           GH_TOKEN: ${{ github.token }}

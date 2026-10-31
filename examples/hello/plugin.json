@@ -36,7 +36,7 @@
     "name": "Player contributors",
     "url": "https://github.com/verncat"
   },
-  "repository": "https://github.com/verncat/player-plugins",
-  "homepage": "https://github.com/verncat/player-plugins/tree/main/examples/hello",
+  "repository": "https://github.com/NoName-Audio/player-plugins",
+  "homepage": "https://github.com/NoName-Audio/player-plugins/tree/main/examples/hello",
   "image": "assets/hello.png"
 }

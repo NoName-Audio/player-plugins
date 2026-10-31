@@ -2,7 +2,7 @@
 
 [Documentation](README.md) · [catalog.json](../catalog.json)
 
-Player fetches `https://raw.githubusercontent.com/verncat/player-plugins/main/catalog.json`.
+Player fetches `https://raw.githubusercontent.com/NoName-Audio/player-plugins/main/catalog.json`.
 The current schema is **2**; schema 1 described script packages and is rejected.
 There is no bundled fallback or disk cache. Errors clear the listing and appear as toasts.
 
@@ -26,7 +26,7 @@ Optional fields are `installUrl`, `updatedAt`, `version`, `author`, `image`, `an
 Player uses repository. Metadata follows the [manifest rules](development.md#manifest-rules).
 
 Catalog `image` links to an image file over HTTP(S), for example
-`https://raw.githubusercontent.com/verncat/player-plugins/main/soulseek/assets/soulseek.png`.
+`https://raw.githubusercontent.com/NoName-Audio/player-plugins/main/soulseek/assets/soulseek.png`.
 Source plugin.json uses a relative local image path. The packager embeds the file
 in generated installation metadata for offline use; the release catalog generator
 links to that source file at the release tag and never copies base64 into the catalog.

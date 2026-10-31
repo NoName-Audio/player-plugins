@@ -1,7 +1,7 @@
 # Submit your plugin
 
 To add your plugin to Player's catalog, open a pull request against `main` in
-[verncat/player-plugins](https://github.com/verncat/player-plugins), adding an entry
+[NoName-Audio/player-plugins](https://github.com/NoName-Audio/player-plugins), adding an entry
 to the `plugins` array in [catalog.json](catalog.json).
 
 Your plugin can be developed and published in **your own public repository**. You do

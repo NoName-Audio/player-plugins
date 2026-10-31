@@ -55,10 +55,10 @@
   ],
   "author": {
     "name": "Player contributors",
-    "url": "https://github.com/verncat/player/graphs/contributors"
+    "url": "https://github.com/NoName-Audio/player/graphs/contributors"
   },
-  "repository": "https://github.com/verncat/player-plugins",
-  "homepage": "https://github.com/verncat/player-plugins/tree/main/soulseek",
+  "repository": "https://github.com/NoName-Audio/player-plugins",
+  "homepage": "https://github.com/NoName-Audio/player-plugins/tree/main/soulseek",
   "image": "assets/soulseek.png",
   "pollIntervalMs": 250
 }

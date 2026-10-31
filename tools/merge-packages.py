@@ -81,7 +81,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('inputs', type=Path)
     parser.add_argument('output', type=Path)
-    parser.add_argument('--repository', default='verncat/player-plugins')
+    parser.add_argument('--repository', default='NoName-Audio/player-plugins')
     parser.add_argument('--tag', required=True)
     parser.add_argument('--catalog', type=Path, default=Path('catalog.json'))
     args = parser.parse_args()

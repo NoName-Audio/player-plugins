@@ -16,9 +16,9 @@ class PublishingTests(unittest.TestCase):
         directory.mkdir(parents=True, exist_ok=True)
         data = b'native library fixture'
         package = {'manifest': {'id': 'player.soulseek', 'name': 'Soulseek', 'description': 'Music',
-                               'version': version, 'apiVersion': 2, 'repository': 'https://github.com/verncat/player-plugins',
+                               'version': version, 'apiVersion': 2, 'repository': 'https://github.com/NoName-Audio/player-plugins',
                                'platforms': ['macos', 'windows', 'linux'],
-                               'image': 'https://raw.githubusercontent.com/verncat/player-plugins/main/soulseek/assets/soulseek.png'},
+                               'image': 'https://raw.githubusercontent.com/NoName-Audio/player-plugins/main/soulseek/assets/soulseek.png'},
                    'native': {'kind': 'library', 'artifacts': {target: {'data': base64.b64encode(data).decode(),
                                                                      'sha256': hashlib.sha256(data).hexdigest()}}}}
         file = directory / f'{target}.player-plugin'
@@ -31,12 +31,12 @@ class PublishingTests(unittest.TestCase):
             self.fixture(root / 'input', 'macos-aarch64')
             self.fixture(root / 'input', 'windows-x86_64')
             (root / 'input/player.soulseek.apk').write_bytes(b'apk fixture')
-            catalog = module.merge(root / 'input', root / 'dist', 'verncat/player-plugins', 'native-v1.0.0', '2026-10-31')
+            catalog = module.merge(root / 'input', root / 'dist', 'NoName-Audio/player-plugins', 'native-v1.0.0', '2026-10-31')
             self.assertEqual(catalog['schemaVersion'], 2)
             self.assertTrue(catalog['plugins'][0]['installUrl'].endswith('/player.soulseek.player-plugin'))
             self.assertTrue(catalog['plugins'][0]['androidApkUrl'].endswith('/player.soulseek.apk'))
             self.assertIn('android', catalog['plugins'][0]['platforms'])
-            self.assertEqual(catalog['plugins'][0]['image'], 'https://raw.githubusercontent.com/verncat/player-plugins/main/soulseek/assets/soulseek.png')
+            self.assertEqual(catalog['plugins'][0]['image'], 'https://raw.githubusercontent.com/NoName-Audio/player-plugins/main/soulseek/assets/soulseek.png')
             package = json.loads((root / 'dist/player.soulseek.player-plugin').read_text())
             self.assertEqual(len(package['native']['artifacts']), 2)
 
