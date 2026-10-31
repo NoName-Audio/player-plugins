@@ -54,3 +54,10 @@ The catalog endpoint is
 `https://raw.githubusercontent.com/verncat/player-plugins/main/catalog.json`.
 Legacy script packages are not listed. Publish compiled native artifacts before adding
 entries; see [catalog publishing](docs/catalog.md).
+
+## Add your plugin to the catalog
+
+Publish your plugin in your own repository, then **open a pull request** here adding
+an entry to [catalog.json](catalog.json). Set `repository` to your repository and
+`installUrl` to your published native package. You do not need to copy the plugin's
+source code into this repository. See [submission instructions and an example entry](CONTRIBUTING.md).

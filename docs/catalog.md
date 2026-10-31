@@ -38,11 +38,20 @@ Unknown fields and invalid entries reject the entire response.
 
 ## Publish
 
-1. Build native libraries for the advertised platform/CPU targets.
-2. Package them with `player-plugin-pack` and publish the file, for example as a release asset.
-3. Add metadata with the actual package ID, version, and installUrl; update catalog dates.
-4. Run `cargo test --workspace --locked` and test installing the real package in Player.
-5. Push `main`; users can select Refresh catalog.
+You can develop and publish your plugin in your own public repository. To list it
+here, fork this repository, add an entry to the `plugins` array in `catalog.json`,
+and **open a pull request against main**. Set `repository` to your source repository
+and `installUrl` to its published, compiled native package (for example a GitHub
+Release asset). You do not need to copy your plugin's source into this repository.
+
+1. Build and publish native packages for the platforms you advertise.
+2. Add the actual ID, version, repository URL and installUrl to `catalog.json`.
+3. Set entry dates and update the catalog date; preserve addedAt on later updates.
+4. Test installing the package from its public URL in Player.
+5. Open a pull request for maintainer review. After it is merged, users can select
+   Refresh catalog to discover your plugin.
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for a complete example entry and submission steps.
 
 Catalog metadata grants no permissions and does not replace the downloaded manifest.
 Player verifies the selected ID and content fingerprint, then requests approval before
