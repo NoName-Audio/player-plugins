@@ -48,7 +48,23 @@ class PublishingTests(unittest.TestCase):
             package['manifest']['image'] = 'data:image/png;base64,aWNvbg=='
             file.write_text(json.dumps(package))
             with self.assertRaisesRegex(ValueError, 'Catalog image must link to an image file'):
-                module.merge(root / 'input', root / 'dist', 'repo', 'tag')
+                module.merge(root / 'input', root / 'dist', 'repo', 'tag', sources=root / 'sources')
+
+    def test_catalog_links_source_asset_instead_of_embedded_package_image(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            file = self.fixture(root / 'input', 'macos-aarch64')
+            package = json.loads(file.read_text())
+            package['manifest']['image'] = 'data:image/png;base64,aWNvbg=='
+            file.write_text(json.dumps(package))
+            folder = root / 'sources/soulseek'
+            (folder / 'assets').mkdir(parents=True)
+            (folder / 'assets/icon.png').write_bytes(b'icon')
+            (folder / 'plugin.json').write_text(json.dumps({'id':'player.soulseek', 'image':'assets/icon.png'}))
+            catalog = module.merge(root / 'input', root / 'dist', 'owner/repo', 'native-v2', sources=root / 'sources')
+            self.assertEqual(catalog['plugins'][0]['image'], 'https://raw.githubusercontent.com/owner/repo/native-v2/soulseek/assets/icon.png')
+            packed = json.loads((root / 'dist/player.soulseek.player-plugin').read_text())
+            self.assertTrue(packed['manifest']['image'].startswith('data:'))
 
     def test_rejects_mixed_versions_and_tampered_binaries(self):
         with tempfile.TemporaryDirectory() as temporary:

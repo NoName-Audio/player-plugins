@@ -2,6 +2,7 @@
 use serde_json::{json, Value};
 use std::ffi::c_void;
 
+pub mod packaging;
 pub use serde_json;
 pub const ABI_VERSION: u32 = 1;
 pub const MAX_MESSAGE_BYTES: usize = 1024 * 1024;

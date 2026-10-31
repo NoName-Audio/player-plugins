@@ -1,6 +1,6 @@
 //! Build a portable JSON container with native libraries; never execute plugin code.
 use base64::{engine::general_purpose::STANDARD, Engine};
-use serde_json::{json, Value};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeMap, path::PathBuf};
 fn pack() -> Result<(), Box<dyn std::error::Error>> {
@@ -9,7 +9,7 @@ fn pack() -> Result<(), Box<dyn std::error::Error>> {
         "Usage: player-plugin-pack <plugin-folder> <output.player-plugin> <os-arch=library>...",
     )?);
     let output = PathBuf::from(args.next().ok_or("Missing output path")?);
-    let manifest: Value = serde_json::from_slice(&std::fs::read(folder.join("plugin.json"))?)?;
+    let manifest = player_plugin_sdk::packaging::manifest(&folder)?;
     if manifest["apiVersion"] != 2 || manifest["id"].as_str().is_none_or(|id| id.is_empty()) {
         return Err("Only native API 2 packages with an ID can be packed".into());
     }

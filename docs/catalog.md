@@ -27,7 +27,9 @@ Player uses repository. Metadata follows the [manifest rules](development.md#man
 
 Catalog `image` links to an image file over HTTP(S), for example
 `https://raw.githubusercontent.com/verncat/player-plugins/main/soulseek/assets/soulseek.png`.
-Embedded base64 images are rejected by the release catalog generator.
+Source plugin.json uses a relative local image path. The packager embeds the file
+in generated installation metadata for offline use; the release catalog generator
+links to that source file at the release tag and never copies base64 into the catalog.
 
 Dates use calendar `YYYY-MM-DD`. Preserve `addedAt` on updates; entry `updatedAt`
 falls between its addition and catalog update dates. URLs use HTTPS without credentials.

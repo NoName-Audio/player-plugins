@@ -58,6 +58,6 @@
   },
   "repository": "https://github.com/verncat/player-plugins",
   "homepage": "https://github.com/verncat/player-plugins/tree/main/soulseek",
-  "image": "https://raw.githubusercontent.com/verncat/player-plugins/main/soulseek/assets/soulseek.png",
+  "image": "../assets/soulseek.png",
   "pollIntervalMs": 250
 }

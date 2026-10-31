@@ -78,7 +78,7 @@ returned data and forwards approved requests. No executable script is packaged.
 | `description` | Optional, up to 2000 UTF-8 bytes |
 | `author` | Optional name string or `{name, url?}` |
 | `repository`, `homepage` | Optional HTTP(S) URLs without credentials |
-| `image` | HTTP(S) URL or PNG/JPEG/WebP/GIF base64 data URL, at most 256 KiB decoded |
+| `image` | Local PNG/JPEG/WebP/GIF path relative to plugin.json (e.g. assets/icon.png), or HTTP(S) URL; at most 256 KiB for local files |
 | `platforms` | Nonempty array of `macos`, `windows`, `linux`, `android` |
 | `permissions` | Host capabilities needed by the package |
 | `contributions` | At most 32 entries with unique local IDs |

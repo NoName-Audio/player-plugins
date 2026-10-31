@@ -1,4 +1,3 @@
-import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 
 plugins {
@@ -7,16 +6,14 @@ plugins {
 }
 
 val pluginAbis = (findProperty("pluginAbis") as? String ?: "arm64-v8a").split(',')
-val generatePluginAssets by tasks.registering {
-    inputs.files("plugin.json")
+val generatePluginAssets by tasks.registering(Exec::class) {
+    inputs.file("plugin.json")
+    inputs.dir("../../native-sdk/src")
+    val manifest = JsonSlurper().parse(file("plugin.json")) as Map<*, *>
+    val image = manifest["image"] as? String
+    if (image != null && !image.contains(":")) inputs.file(image)
     outputs.dir(layout.buildDirectory.dir("generated/pluginAssets"))
-    doLast {
-        val output = layout.buildDirectory.file("generated/pluginAssets/player-plugin.json").get().asFile
-        output.parentFile.mkdirs()
-        output.writeText(JsonOutput.toJson(mapOf(
-            "manifest" to JsonSlurper().parse(file("plugin.json")), "native" to mapOf("kind" to "android-apk"),
-        )))
-    }
+    commandLine("cargo", "run", "--locked", "--manifest-path", "../../Cargo.toml", "-p", "player-plugin-sdk", "--bin", "player-plugin-manifest", "--", projectDir.absolutePath, layout.buildDirectory.file("generated/pluginAssets/player-plugin.json").get().asFile.absolutePath)
 }
 val buildPluginRust by tasks.registering(Exec::class) {
     inputs.dir("native/src")

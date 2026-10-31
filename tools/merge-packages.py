@@ -5,10 +5,34 @@ import base64
 import datetime
 import hashlib
 import json
+from urllib.parse import quote
 from pathlib import Path
 
 
-def merge(inputs, output, repository, tag, date=None):
+def catalog_image(manifest, repository, tag, sources):
+    image = manifest.get('image')
+    if image is None or image.startswith(('https://', 'http://')):
+        return image
+    # Packed metadata embeds local assets for offline installation. Catalogs link
+    # directly to the source file at the immutable release tag instead.
+    candidates = [*sources.glob('*/plugin.json'), *sources.glob('examples/*/plugin.json')]
+    for file in candidates:
+        source = json.loads(file.read_text())
+        if source.get('id') != manifest['id']:
+            continue
+        local = source.get('image', '')
+        if not local or ':' in local:
+            break
+        path = (file.parent / local).resolve()
+        relative = path.relative_to(sources.resolve())
+        if not path.is_file():
+            raise ValueError(f'Missing catalog image file: {path}')
+        return f'https://raw.githubusercontent.com/{repository}/{quote(tag, safe="")}/{quote(relative.as_posix())}'
+    raise ValueError(f'Catalog image must link to an image file: {manifest["id"]}')
+
+
+def merge(inputs, output, repository, tag, date=None, sources=None):
+    sources = sources or Path(__file__).resolve().parents[1]
     output.mkdir(parents=True, exist_ok=True)
     groups = {}
     for file in sorted(inputs.rglob('*.player-plugin')):
@@ -37,9 +61,8 @@ def merge(inputs, output, repository, tag, date=None):
             raise ValueError(f'Package exceeds 96 MiB: {plugin_id}')
         manifest = package['manifest']
         entry = {key: manifest[key] for key in ('id', 'name', 'description', 'repository', 'version', 'author', 'image', 'platforms') if key in manifest}
-        image = entry.get('image')
-        if image is not None and not image.startswith(('https://', 'http://')):
-            raise ValueError(f'Catalog image must link to an image file: {plugin_id}')
+        if 'image' in entry:
+            entry['image'] = catalog_image(manifest, repository, tag, sources)
         entry.update(installUrl=f'https://github.com/{repository}/releases/download/{tag}/{file.name}', addedAt=added, updatedAt=added,
                      tags=['native', 'music'] if plugin_id == 'player.soulseek' else ['native', 'presence'])
         apk_files = list(inputs.rglob(f'{plugin_id}.apk'))

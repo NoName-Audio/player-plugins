@@ -11,6 +11,7 @@ Node.js, pnpm, and a script bundler are not required for this repository.
 | `cargo build --workspace --locked` | Build libraries and native CLI tools for the host |
 | `cargo build --release -p player-hello-plugin` | Build the desktop example |
 | `cargo run -p player-plugin-sdk --bin player-plugin-pack -- <folder> <output> <os-arch=library>...` | Package compiled native libraries |
+| `cargo run -p player-plugin-sdk --bin player-plugin-manifest -- <folder> <output>` | Generate APK metadata, resolving local image paths |
 | `./gradlew -p examples/android-native assembleDebug` | Build the standalone Android APK |
 
 The packer is [player-plugin-pack.rs](../native-sdk/src/bin/player-plugin-pack.rs).

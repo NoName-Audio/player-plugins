@@ -29,5 +29,5 @@
   },
   "repository": "https://github.com/verncat/player-plugins",
   "homepage": "https://github.com/verncat/player-plugins/tree/main/discord-rpc",
-  "image": "https://raw.githubusercontent.com/verncat/player-plugins/main/discord-rpc/assets/discord.png"
+  "image": "assets/discord.png"
 }

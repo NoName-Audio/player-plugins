@@ -14,8 +14,10 @@ player-plugins/
 │   ├── Cargo.toml                     # shared SDK crate
 │   └── src/
 │       ├── lib.rs                     # NativePlugin, Host, C ABI, export macro
+│       ├── packaging.rs               # source manifest and local icon resolution
 │       └── bin/
 │           ├── player-plugin-pack.rs  # compiled libraries → .player-plugin
+│           ├── player-plugin-manifest.rs # source manifest → Android metadata
 │           └── player-plugin-android-build.rs # Cargo/NDK helper used by Gradle
 ├── native-android-sdk/                # reusable JNI host callbacks and export macro
 ├── tools/                             # verified release merger and Python tests
@@ -64,8 +66,10 @@ player-plugins/
 
 A Rust desktop package has `plugin.json`, `Cargo.toml`, and `src/lib.rs`.
 The manifest's ID must match the ID exported by its compiled library. `assets/`
-contains image sources and attribution; relative asset paths are not supported in
-manifest `image`, so use an HTTP(S) URL or an embedded raster data URL.
+contains image sources and attribution. Source manifest `image` may be a local
+path relative to plugin.json, such as `assets/icon.png`. The shared packager embeds
+the file only in generated installation metadata, so installed icons work offline.
+Catalog generation links to the source file at the release tag.
 
 The default `ffi` feature exports the desktop C ABI from each `cdylib`.
 Android wrappers use the same Rust package as an `rlib` with FFI exports disabled.
