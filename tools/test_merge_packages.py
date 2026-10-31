@@ -17,7 +17,8 @@ class PublishingTests(unittest.TestCase):
         data = b'native library fixture'
         package = {'manifest': {'id': 'player.soulseek', 'name': 'Soulseek', 'description': 'Music',
                                'version': version, 'apiVersion': 2, 'repository': 'https://github.com/verncat/player-plugins',
-                               'platforms': ['macos', 'windows', 'linux']},
+                               'platforms': ['macos', 'windows', 'linux'],
+                               'image': 'https://raw.githubusercontent.com/verncat/player-plugins/main/soulseek/assets/soulseek.png'},
                    'native': {'kind': 'library', 'artifacts': {target: {'data': base64.b64encode(data).decode(),
                                                                      'sha256': hashlib.sha256(data).hexdigest()}}}}
         file = directory / f'{target}.player-plugin'
@@ -35,8 +36,19 @@ class PublishingTests(unittest.TestCase):
             self.assertTrue(catalog['plugins'][0]['installUrl'].endswith('/player.soulseek.player-plugin'))
             self.assertTrue(catalog['plugins'][0]['androidApkUrl'].endswith('/player.soulseek.apk'))
             self.assertIn('android', catalog['plugins'][0]['platforms'])
+            self.assertEqual(catalog['plugins'][0]['image'], 'https://raw.githubusercontent.com/verncat/player-plugins/main/soulseek/assets/soulseek.png')
             package = json.loads((root / 'dist/player.soulseek.player-plugin').read_text())
             self.assertEqual(len(package['native']['artifacts']), 2)
+
+    def test_catalog_rejects_embedded_images(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            file = self.fixture(root / 'input', 'macos-aarch64')
+            package = json.loads(file.read_text())
+            package['manifest']['image'] = 'data:image/png;base64,aWNvbg=='
+            file.write_text(json.dumps(package))
+            with self.assertRaisesRegex(ValueError, 'Catalog image must link to an image file'):
+                module.merge(root / 'input', root / 'dist', 'repo', 'tag')
 
     def test_rejects_mixed_versions_and_tampered_binaries(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -37,6 +37,9 @@ def merge(inputs, output, repository, tag, date=None):
             raise ValueError(f'Package exceeds 96 MiB: {plugin_id}')
         manifest = package['manifest']
         entry = {key: manifest[key] for key in ('id', 'name', 'description', 'repository', 'version', 'author', 'image', 'platforms') if key in manifest}
+        image = entry.get('image')
+        if image is not None and not image.startswith(('https://', 'http://')):
+            raise ValueError(f'Catalog image must link to an image file: {plugin_id}')
         entry.update(installUrl=f'https://github.com/{repository}/releases/download/{tag}/{file.name}', addedAt=added, updatedAt=added,
                      tags=['native', 'music'] if plugin_id == 'player.soulseek' else ['native', 'presence'])
         apk_files = list(inputs.rglob(f'{plugin_id}.apk'))

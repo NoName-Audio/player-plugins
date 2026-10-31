@@ -25,6 +25,10 @@ Optional fields are `installUrl`, `updatedAt`, `version`, `author`, `image`, `an
 `plugin.player-plugin`. A source manifest alone is insufficient. Without installUrl,
 Player uses repository. Metadata follows the [manifest rules](development.md#manifest-rules).
 
+Catalog `image` links to an image file over HTTP(S), for example
+`https://raw.githubusercontent.com/verncat/player-plugins/main/soulseek/assets/soulseek.png`.
+Embedded base64 images are rejected by the release catalog generator.
+
 Dates use calendar `YYYY-MM-DD`. Preserve `addedAt` on updates; entry `updatedAt`
 falls between its addition and catalog update dates. URLs use HTTPS without credentials.
 Limits: 512 KiB total, 256 unique entries, 12 tags of at most 40 UTF-8 bytes each.
