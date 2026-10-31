@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = ["native-sdk", "discord-rpc", "soulseek", "examples/hello", "examples/android-native/native"]
+
+[workspace.dependencies]
+serde_json = "1"
+player-plugin-sdk = { path = "native-sdk" }

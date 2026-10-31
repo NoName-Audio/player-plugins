@@ -1,23 +1,18 @@
-# player-plugins documentation
+# Native plugin documentation
 
-Run commands in these documents from the `player-plugins` root unless the
-**Player** repository is explicitly specified. File paths are also relative
-to this repository's root.
+Commands and paths refer to the `player-plugins` root unless **Player** is explicitly named.
 
-| Task | Document |
+| Task | Guide |
 | --- | --- |
-| Locate sources and understand file responsibilities | [Repository structure](structure.md) |
-| Write your first JavaScript plugin | [Development](development.md) |
-| Add UI, settings, and playback events | [SDK](sdk.md) |
-| Add a plugin to Player's listing | [Catalog](catalog.md) |
-| Package, test, or update bundled plugins | [Tooling and delivery](tooling.md) |
-| Understand the Discord integration | [discord-rpc](../discord-rpc/README.md) |
-| Understand search, downloads, and track replacement | [soulseek](../soulseek/README.md) |
-| Run the minimal JavaScript example | [Hello Player](../examples/hello/README.md) |
-| Build an Android plugin with Rust | [Android native](../examples/android-native/README.md) |
+| Locate source files and build outputs | [Repository structure](structure.md) |
+| Create and package a desktop native extension | [Development](development.md) |
+| Implement lifecycle, UI, events, and host calls | [SDK and ABI](sdk.md) |
+| Publish a compiled native package | [Catalog](catalog.md) |
+| Run tools, checks, and update Player's submodule | [Tooling](tooling.md) |
+| Understand the bundled integrations | [Discord](../discord-rpc/README.md), [Soulseek](../soulseek/README.md) |
+| Run a native library example | [Hello](../examples/hello/README.md) |
+| Build an Android APK with Rust | [Android native](../examples/android-native/README.md) |
 
-The current contract is **Plugin API 1**. Its declarations are in [sdk.d.ts](../sdk.d.ts).
-Player validates package schemas and permissions; this repository's packer only produces JSON.
-
-Host implementation details and integration scenarios are described in
-[Player's scope documents](https://github.com/verncat/player/tree/feat/plugins/docs/plugins/scope).
+Current contracts: **Plugin API 2**, **desktop C ABI 1**, **catalog schema 2**.
+All executable plugin code is native. JSON describes manifests, calls, and UI;
+it is not an executable scripting language.

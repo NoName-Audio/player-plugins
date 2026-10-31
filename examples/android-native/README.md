@@ -1,81 +1,71 @@
-# Android APK / Rust example
+# Android native APK example
 
-A standalone native plugin experiment. Its UI runs in the standard Worker;
-the APK contains a Kotlin entrypoint and a Rust JNI library. The APK is built
-separately from Player. Contract and limitations:
-[Android native scope](https://github.com/verncat/player/blob/feat/plugins/docs/plugins/scope/android-native-scope.md).
-
-## Files and call path
+Standalone Kotlin/Rust package `example.android-native`. All lifecycle, UI, and actions
+are implemented in native Rust; Kotlin provides discovery/reflection and the JNI bridge.
+There is no JavaScript asset or Worker.
 
 | File | Purpose |
 | --- | --- |
-| [plugin.json](plugin.json) | Metadata, `native.android`, and the `home` page |
-| [main.js](main.js) | UI tree and `ctx.android.call('echo', {message})` |
-| [src/main/AndroidManifest.xml](src/main/AndroidManifest.xml) | Discovery marker, plugin ID, API version, and entry class name |
-| [NativePlugin.kt](src/main/java/dev/verncat/player/example/nativeplugin/NativePlugin.kt) | Reflection ABI, `.so` loading, and JSON requests through JNI |
-| [native/src/lib.rs](native/src/lib.rs) | JNI entrypoint, `echo`, a call counter, and a unit test |
-| [native/Cargo.toml](native/Cargo.toml) / [Cargo.lock](native/Cargo.lock) | Rust cdylib and pinned dependencies |
-| [build.gradle.kts](build.gradle.kts) | JSON asset generation, Rust build, and APK packaging |
-| [settings.gradle.kts](settings.gradle.kts) | Android/Kotlin Gradle plugins and repositories |
-| [gradle.properties](gradle.properties) / [proguard-rules.pro](proguard-rules.pro) | Build settings and entrypoint preservation |
-
-Call path: Worker `main.js` → Player gateway → Kotlin `NativePlugin.call()` →
-JNI `nativeCall()` → Rust `echo`. The APK code runs inside Player's process;
-native code is not isolated by the Worker. Arguments and results cross as JSON.
-
-Gradle builds `build/generated/pluginAssets/player-plugin.json` from the manifest
-and JS. Player's loader creates the installed APK binding with file and certificate
-SHA-256 hashes; do not add those values manually to the source `plugin.json`.
+| [plugin.json](plugin.json) | API 2 manifest with `ui`, `settings`, and `native.android` |
+| [native/src/lib.rs](native/src/lib.rs) | NativePlugin implementation, UI, settings callback, and JNI entrypoints |
+| [native/Cargo.toml](native/Cargo.toml) | JNI library using the root workspace lockfile |
+| [NativePlugin.kt](src/main/java/dev/verncat/player/example/nativeplugin/NativePlugin.kt) | Native instance lifecycle and host callback bridge |
+| [AndroidManifest.xml](src/main/AndroidManifest.xml) | Discovery marker, API 2, plugin ID, entry class |
+| [build.gradle.kts](build.gradle.kts) | Rust build, package metadata, APK |
+| [settings.gradle.kts](settings.gradle.kts) | Gradle plugins and repositories |
+| [proguard-rules.pro](proguard-rules.pro) | Native/reflection entrypoint preservation |
 
 ## Build
 
-Requires Android SDK/NDK, JDK 17+, a Rust Android target, and Node.js.
-Run from the player-plugins root:
+Requires Rust, the selected Android Rust targets, Android SDK/NDK, and JDK 17+.
+From the repository root:
 
 ```sh
-export ANDROID_HOME="$HOME/Library/Android/sdk" # adjust to your SDK location
+export ANDROID_HOME="$HOME/Library/Android/sdk"
 rustup target add aarch64-linux-android
-pnpm plugins:android:build
+./gradlew -p examples/android-native assembleDebug
 ```
 
+Gradle runs the Rust SDK's `player-plugin-android-build` tool, then includes the JNI
+library and `{manifest, native: {kind: "android-apk"}}` metadata in the APK.
 Output: `examples/android-native/build/outputs/apk/debug/android-native-debug.apk`.
-The debug APK uses the local debug signing key. For publishing, configure release
-signing with your own persistent key; the `.player-plugin` packer does not install APKs.
-Cargo.lock is included. Rust builds through NDK clang without a cargo-ndk dependency.
+Debug builds use a local debug signing key; publishing requires a persistent release key.
 
-Select other ABIs through a Gradle property after installing their Rust targets:
+Select additional ABIs after installing their Rust targets:
 
 ```sh
 ./gradlew -p examples/android-native assembleDebug -PpluginAbis=arm64-v8a,x86_64
 ```
 
-## Connect
+## Connect and call
 
-In the **Player** repository, build the Android app with `pnpm android:build`.
-For Player's native Opus dependency, set `ANDROID_NDK_HOME` to an installed NDK
-version under `$ANDROID_HOME/ndk`. Install Player and the example APK using
-the system installer or adb, then:
+Install the current native-API-2 Player Android app and the example APK. In Player:
 
 1. Open Settings → Plugins → Find APK plugins.
-2. Select Native example → Review connection; review its details and native-code permission.
-3. Choose Install and grant these permissions, then enable the plugin.
-4. The Native example page should show `Rust via JNI` and the architecture.
-5. Enter a message and select Call Rust; the call counter should increase.
+2. Review the native package and signing identity, install its connection, then enable it.
+3. The page renders `Rust via JNI` and its architecture from native code.
+4. Enter a message and select Call Rust. The counter increments and the message is
+   saved through the host's settings API.
 
-When updating the APK, disable its connection, rescan, and approve the new version.
-If its `.so` has already been loaded, restart the Player process completely.
-Removing the connection from Player does not uninstall the Android APK.
+Path: Player native dispatcher → Kotlin `call(method, argsJson, hostCallback)` →
+Rust `NativePlugin::call`. Host calls travel back through Kotlin and Player's JNI bridge,
+using an invocation-scoped token. UI descriptions return as JSON; no plugin code runs
+in the webview. The APK executes inside Player's process with Player's system access.
+
+The loader derives package/class and file/certificate SHA-256 bindings from the
+installed APK. Do not add those hashes manually to the source manifest. Updating a
+loaded JNI library requires a Player process restart, rescan, and approval.
+Removing a connection does not uninstall the Android APK.
 
 ## Verify
 
 ```sh
-cargo test --manifest-path examples/android-native/native/Cargo.toml
-pnpm test
-adb -s emulator-5554 install -r examples/android-native/build/outputs/apk/debug/android-native-debug.apk
+cargo test -p player-native-example
 ```
 
-The loader integration test remains in the Player repository. After building
-and installing the current Player and example APK, run from its `src-tauri/gen/android`:
+The Player repository contains `ApkPluginsTest`, covering real APK pinning, native UI,
+actions, host callbacks, and lifecycle generation checks. Build/install Player and the
+example APK first; then, from **Player** `src-tauri/gen/android`:
 
 ```sh
 ./gradlew :app:assembleArm64DebugAndroidTest -x :app:rustBuildArm64Debug
@@ -83,8 +73,7 @@ adb -s emulator-5554 install -r app/build/outputs/apk/androidTest/arm64/debug/ap
 adb -s emulator-5554 shell am instrument -w -e class dev.verncat.player.ApkPluginsTest dev.verncat.player.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-Skip rustBuild in this command only after a normal Player build; otherwise Gradle
-requires a running Tauri CLI build server. The test calls the actual Kotlin loader
-and Rust code from the installed APK.
+Skipping rustBuild is valid only after a normal Player build; otherwise Gradle requires
+a running Tauri build server. Device instrumentation is separate from workspace tests.
 
-[Documentation](../../docs/README.md) · [File structure](../../docs/structure.md) · [Tooling](../../docs/tooling.md)
+[Documentation](../../docs/README.md) · [Native SDK](../../docs/sdk.md)

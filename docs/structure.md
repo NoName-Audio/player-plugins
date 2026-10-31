@@ -1,108 +1,93 @@
 # Repository structure
 
-[Documentation](README.md) · [Plugin development](development.md)
+[Documentation](README.md) · [Development](development.md)
 
 ```text
 player-plugins/
-├── README.md                     # entry point and quick start
-├── catalog.json                  # public plugin listing
-├── package.json                  # pnpm commands and tooling dependencies
-├── pnpm-lock.yaml                # pinned TypeScript version
-├── sdk.d.ts                      # global API 1 declarations
-├── tsconfig.sdk.json             # SDK declaration checks
-├── .gitignore                    # dependency and build output exclusions
-├── .github/workflows/check.yml   # package and SDK checks on push / pull request
-├── docs/                         # shared guides
-│   ├── README.md                 # documentation index
-│   ├── structure.md              # this document
-│   ├── development.md            # package creation and manifest format
-│   ├── sdk.md                    # API, lifecycle, and declarative UI
-│   ├── catalog.md                # publishing the plugin listing
-│   └── tooling.md                # commands, checks, and Player integration
-├── discord-rpc/                  # bundled Player package
-│   ├── README.md                 # behavior and package file map
-│   ├── plugin.json               # ID, platforms, permissions, and settings section
-│   ├── main.js                   # playback events → host Discord API
-│   └── assets/
-│       ├── README.md             # logo attribution and PNG generation
-│       ├── discord.svg           # vector source
-│       └── discord.png           # logo embedded in the manifest as a data URL
-├── soulseek/                     # bundled Player package
-│   ├── README.md                 # search, downloads, preview, and replacement
-│   ├── plugin.json               # permissions and settings/search/track-menu contributions
-│   ├── main.js                   # UI and native operation coordination
-│   └── assets/
-│       ├── README.md             # logo attribution
-│       └── soulseek.png          # logo embedded in the manifest as a data URL
+├── Cargo.toml                         # Rust workspace and shared dependencies
+├── Cargo.lock                         # pinned workspace dependencies
+├── README.md                          # overview and quick start
+├── catalog.json                       # public native package listing, schema 2
+├── .gitignore                         # local build/package/cache exclusions
+├── .github/workflows/check.yml        # Rust tests and builds on macOS/Linux/Windows
+├── native-sdk/
+│   ├── Cargo.toml                     # shared SDK crate
+│   └── src/
+│       ├── lib.rs                     # NativePlugin, Host, C ABI, export macro
+│       └── bin/
+│           ├── player-plugin-pack.rs  # compiled libraries → .player-plugin
+│           └── player-plugin-android-build.rs # Cargo/NDK helper used by Gradle
+├── discord-rpc/
+│   ├── README.md                      # behavior and file map
+│   ├── Cargo.toml                     # rlib/cdylib; optional ffi exports
+│   ├── plugin.json                    # metadata, permissions, settings contribution
+│   ├── src/lib.rs                     # native playback handler and UI
+│   └── assets/                        # Discord SVG/PNG and attribution README
+├── soulseek/
+│   ├── README.md                      # behavior and file map
+│   ├── Cargo.toml                     # native package crate
+│   ├── plugin.json                    # settings/search/menu/widget contributions
+│   ├── src/lib.rs                     # UI, search, transfer intentions, preview/import
+│   └── assets/                        # Soulseek PNG and attribution README
 ├── examples/
 │   ├── hello/
-│   │   ├── README.md             # running the example and expected behavior
-│   │   ├── plugin.json           # regular external package example.hello
-│   │   └── main.js               # settings, a page, and playback events
+│   │   ├── README.md
+│   │   ├── Cargo.toml                 # desktop native library crate
+│   │   ├── plugin.json                # external package example.hello
+│   │   └── src/lib.rs                 # native settings, page, and playback widget
 │   └── android-native/
-│       ├── README.md             # building, connecting, and testing the APK
-│       ├── plugin.json           # plugin manifest embedded in the APK
-│       ├── main.js               # UI and ctx.android.call()
-│       ├── build.gradle.kts      # APK, JSON assets, and Rust JNI build
-│       ├── settings.gradle.kts   # Android/Kotlin Gradle plugins and repositories
-│       ├── gradle.properties     # Gradle and AndroidX settings
-│       ├── proguard-rules.pro    # reflection/JNI entrypoint preservation
+│       ├── README.md
+│       ├── plugin.json                # API 2 manifest included in the APK
+│       ├── build.gradle.kts           # assets, Rust build, APK packaging
+│       ├── settings.gradle.kts        # Gradle plugins and repositories
+│       ├── gradle.properties
+│       ├── proguard-rules.pro         # reflection/JNI entrypoint preservation
 │       ├── src/main/
-│       │   ├── AndroidManifest.xml
+│       │   ├── AndroidManifest.xml    # discovery metadata, native API 2
 │       │   └── java/dev/verncat/player/example/nativeplugin/NativePlugin.kt
 │       └── native/
-│           ├── Cargo.toml        # player_native_example Rust cdylib
-│           ├── Cargo.lock        # pinned JNI/JSON dependencies
-│           └── src/lib.rs        # JNI entrypoint, echo, and unit test
-├── scripts/
-│   ├── package-plugin.mjs        # plugin.json + main.js → .player-plugin
-│   └── build-android-plugin.mjs  # Cargo + NDK → .so for selected ABIs
-├── tests/packages.test.mjs       # packaging and catalog consistency checks
-├── gradlew / gradlew.bat         # Gradle wrapper for the Android example
-└── gradle/wrapper/
-    ├── gradle-wrapper.jar
-    └── gradle-wrapper.properties # pinned Gradle distribution
+│           ├── Cargo.toml             # JNI library, uses the workspace lockfile
+│           └── src/lib.rs             # native lifecycle/UI/actions and JNI bridge
+├── docs/                              # index, structure, development, SDK, catalog, tooling
+├── gradlew / gradlew.bat               # standalone Android Gradle wrapper
+└── gradle/wrapper/                     # wrapper JAR and pinned Gradle distribution
 ```
 
-## Regular package layout
+## Package sources
 
-A package needs at least `plugin.json` and `main.js` in the same directory.
-The manifest describes the package; `main.js` contains all executable code
-and one call to `registerPlugin`. See [package creation](development.md).
+A Rust desktop package has `plugin.json`, `Cargo.toml`, and `src/lib.rs`.
+The manifest's ID must match the ID exported by its compiled library. `assets/`
+contains image sources and attribution; relative asset paths are not supported in
+manifest `image`, so use an HTTP(S) URL or an embedded raster data URL.
 
-A package's `README.md` explains its behavior. `assets/` holds image sources
-and attribution. The packer only reads the two required files: images and other
-resources are not automatically included. Relative paths in `image` are unsupported;
-use HTTP(S) or a data URL. Replacing a PNG in `assets/` does not update the image
-already embedded in `plugin.json`.
+`rlib` builds allow bundled packages to link directly into Player. The default
+`ffi` feature exports the C ABI for a separate `cdylib`. Player disables that
+feature when linking Discord/Soulseek, preventing duplicate exported symbols.
 
-Create each new plugin in a separate directory; `examples/` is for sample packages.
-The directory name and plugin ID are separate: the manifest defines the ID, which
-must remain stable across updates. Adding a directory does not automatically add
-an entry to the [catalog](catalog.md).
+New crates must be added to the root workspace's `members`. Keep package IDs stable
+across updates. Source directories alone are not installable: publish compiled libraries
+inside a native package, or install an Android APK.
 
-## Sources and generated files
+## Generated files
 
-| Output | Location | Storage |
-| --- | --- | --- |
-| Installed npm dependencies | `node_modules/` | Ignored by Git |
-| Packaged JS plugin | Explicit output or `<folder>/<id>-<version>.player-plugin` | Ignored by Git |
-| Rust Android build | `examples/android-native/native/target/` | Ignored by Git |
-| Copied JNI libraries | `examples/android-native/build/generated/jniLibs/<abi>/` | Ignored by Git |
-| APK manifest/script JSON | `examples/android-native/build/generated/pluginAssets/player-plugin.json` | Generated by Gradle |
-| Debug APK | `examples/android-native/build/outputs/apk/debug/android-native-debug.apk` | Ignored by Git |
-| Gradle cache / SDK path | `.gradle/`, `local.properties` | Ignored by Git |
+| Output | Location |
+| --- | --- |
+| Host Rust libraries and tools | `target/` |
+| Packaged native extension | Explicit `.player-plugin` output path |
+| Android Rust target builds | `examples/android-native/native/target/` |
+| Copied Android libraries | `examples/android-native/build/generated/jniLibs/<abi>/` |
+| APK package metadata | `examples/android-native/build/generated/pluginAssets/player-plugin.json` |
+| Debug APK | `examples/android-native/build/outputs/apk/debug/android-native-debug.apk` |
+| Gradle caches / local SDK settings | `.gradle/`, `local.properties` |
 
-`Cargo.lock`, `pnpm-lock.yaml`, and the Gradle wrapper are tracked for reproducible builds.
+Generated outputs are ignored by Git. The root `Cargo.lock` and Gradle wrapper are tracked.
 
 ## Boundary with Player
 
-This repository holds packages. Player owns the Worker runtime, UI renderer,
-manifest validation, installation, storage, and native gateway. Player's `src/`
-and `src-tauri/` directories therefore live in the Player repository.
-Rust in `examples/android-native/native/` belongs to the standalone APK;
-the bundled Discord/Soulseek Rust adapters live in Player.
+Player owns loading, package approval, registry/settings/secrets, UI rendering,
+playback coordination, and the native capability gateway. Its Rust Discord/Soulseek
+network adapters remain host services used by these native packages.
+The APK example's Rust code belongs to the separately installed APK.
 
-Player includes this repository as the `plugins/` submodule. For example,
-`player-plugins/soulseek/main.js` is available there as `Player/plugins/soulseek/main.js`.
-See [tooling and delivery](tooling.md#player-integration) for updating the pinned commit.
+In Player, this repository is the pinned `plugins/` submodule.
+See [Player integration](tooling.md#player-integration) for updating it.

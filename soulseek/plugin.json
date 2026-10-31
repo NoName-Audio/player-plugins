@@ -2,7 +2,7 @@
   "id": "player.soulseek",
   "name": "Soulseek",
   "version": "1.0.0",
-  "apiVersion": 1,
+  "apiVersion": 2,
   "description": "Search, preview, download and replace music from Soulseek.",
   "platforms": [
     "macos",

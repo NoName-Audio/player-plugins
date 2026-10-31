@@ -8,24 +8,25 @@ plugins {
 
 val pluginAbis = (findProperty("pluginAbis") as? String ?: "arm64-v8a").split(',')
 val generatePluginAssets by tasks.registering {
-    inputs.files("plugin.json", "main.js")
+    inputs.files("plugin.json")
     outputs.dir(layout.buildDirectory.dir("generated/pluginAssets"))
     doLast {
         val output = layout.buildDirectory.file("generated/pluginAssets/player-plugin.json").get().asFile
         output.parentFile.mkdirs()
         output.writeText(JsonOutput.toJson(mapOf(
-            "manifest" to JsonSlurper().parse(file("plugin.json")), "script" to file("main.js").readText(),
+            "manifest" to JsonSlurper().parse(file("plugin.json")), "native" to mapOf("kind" to "android-apk"),
         )))
     }
 }
 val buildPluginRust by tasks.registering(Exec::class) {
     inputs.dir("native/src")
     inputs.file("native/Cargo.toml")
-    inputs.file("native/Cargo.lock")
+    inputs.file("../../Cargo.lock")
+    inputs.dir("../../native-sdk/src")
     inputs.property("pluginAbis", pluginAbis)
-    inputs.file("../../scripts/build-android-plugin.mjs")
+    inputs.dir("../../native-sdk/src")
     outputs.dir(layout.buildDirectory.dir("generated/jniLibs"))
-    commandLine("node", "../../scripts/build-android-plugin.mjs", projectDir.absolutePath, pluginAbis.joinToString(","))
+    commandLine("cargo", "run", "--locked", "--manifest-path", "../../Cargo.toml", "-p", "player-plugin-sdk", "--bin", "player-plugin-android-build", "--", projectDir.absolutePath, pluginAbis.joinToString(","))
 }
 
 android {

@@ -1,107 +1,107 @@
-# SDK and declarative UI
+# Native SDK and C ABI
 
-[Documentation](README.md) · [Create a plugin](development.md)
+[Documentation](README.md) · [Development](development.md)
 
-Global declarations live in [sdk.d.ts](../sdk.d.ts). Do not import this file into
-the executable `main.js`: Player supplies `registerPlugin` and the context.
-[tsconfig.sdk.json](../tsconfig.sdk.json) checks the declarations, not every plugin's code.
+Source: [native-sdk/src/lib.rs](../native-sdk/src/lib.rs).
+The current contract is Plugin API 2, with desktop C ABI 1. Rust plugins implement
+`NativePlugin`; other native languages can implement the same C/JSON boundary.
 
-## Lifecycle
+## Rust interface
 
-One `registerPlugin(factory)` call registers a synchronous factory. It receives
-`ctx` and returns handlers; each handler is optional.
+`NativePlugin: Send` provides `call(&mut self, method, args, host) -> Result<Value, String>`.
+The host serializes calls for each activation and runs plugin code outside the UI thread.
+Calls to `Host::call(method, args)` are synchronous from the plugin's perspective;
+Player performs the asynchronous operation and returns its result.
 
-| Handler | Invocation |
+| Method | Arguments / result |
 | --- | --- |
-| `activate()` | After instance creation; may return a Promise |
-| `render({viewId, context})` | When the host requests a contribution's UI |
-| `action({action, payload, fields, context})` | After a button, toggle, or track action |
-| `search({providerId, query, cursor, limit})` | For a page of search results |
-| `renderSearch({ids})` | To refresh existing rows; `null` preserves previous rows |
-| `deactivate()` | During normal shutdown; releases instance resources |
+| `activate` | `{pluginId, generation}`; initialize the native instance |
+| `deactivate` | Release resources; host permissions have already been revoked on disable |
+| `render` | `{viewId, context}` → UI node |
+| `action` | `{action, payload, fields, context}` → JSON value or error |
+| `search` | `{providerId, query, cursor, limit}` → `{items, nextCursor}` |
+| `renderSearch` | `{ids}` → refreshed rows or `null` to keep existing rows |
+| `playback` | `{title, artist, album, position, duration, playing, resource?}` |
+| `event` | `{topic, payload}` from the plugin's native host services |
 
-Disabling a plugin aborts `ctx.signal`, terminates its Worker, and rejects further
-capability calls. Stored settings and native operations are independent of an open
-panel; restore transient Worker state when a new instance is created.
+Positions/durations use seconds. `playback` is sent only with `playback.read`.
+The native instance survives panel unmount and webview reconnect; app restart or a
+new enabled generation creates a new instance. Make activation idempotent if called
+outside Player's dispatcher. Native calls cannot be forcibly killed safely in-process.
 
-## Context
+## Host services
 
-| API | Purpose |
+| Method | Purpose |
 | --- | --- |
-| `ctx.pluginId`, `ctx.generation` | Plugin ID and activation generation |
-| `ctx.signal` | Instance lifetime AbortSignal |
-| `ctx.call(method, args)` | Asynchronous host API call with permission checks |
-| `ctx.on(topic, handler)` | Plugin-owned native events; returns an unsubscribe function |
-| `ctx.playback.subscribe(handler)` | Playback snapshots; returns an unsubscribe function |
-| `ctx.playback.pause/resume/stop/seek` | Transport control; time is in seconds |
-| `ctx.playback.play`, `ctx.playback.adopt` | Play a resource / adopt an imported track |
-| `ctx.ui.invalidate()` | Refresh the UI tree and displayed results |
-| `ctx.ui.navigate(pageId, context)` | Open one of the plugin's registered pages |
-| `ctx.android.call(method, args)` | Call the connected Android APK backend |
-| `ctx.log(message)` | Local diagnostics |
+| `settings.get`, `settings.update` | Local per-ID settings; update with `{revision, values}` |
+| `secrets.has/get/set/delete` | Credential provider access with `key`; `set` also takes `value` |
+| `host.invalidate` | Refresh native UI and displayed search rows; `Host::invalidate()` wraps this |
+| `host.navigate` | Open a registered own page: `{pageId, context}` |
+| `host.play` | Play `{sourceToken, resource}` through Player's coordinator |
+| `host.transport` | `{action: pause/resume/stop/seek, position?}` |
+| `host.adopt` | Adopt an imported `{resourceId, track}` into loaded playback state |
+| `host.background` | Start an asynchronous host capability call; see below |
+| `http.request`, `http.download` | Network operations through the host |
+| `library.import`, `library.replace` | Import a host-issued source token |
+| `discord.*`, `soulseek.*` | Bundled native adapter services |
 
-A snapshot contains `title`, `artist`, `album`, `position`, `duration`, `playing`,
-and an optional `resource`. Position and duration use seconds. Subscriptions require
-`playback.read`; playback control requires `playback.control`.
+`settings.update` replaces the settings object with the expected revision. Read the
+latest revision after a conflict. Store credentials with `secrets`, not settings/logs.
+Permission and generation checks apply to every host call, including callbacks from
+native libraries and APKs. Navigation, playback and adoption also pass the frontend's
+registered-page and capability checks.
 
-## Settings and secrets
+For background work, call `host.background` with `{id, topic, method, args}`. It returns
+immediately; the plugin later receives `event` with that topic and a payload
+`{id, result, error?}`. Host capability checks still apply. Soulseek uses this to fetch
+covers without blocking search/render, keeping at most two cover requests active.
 
-`settings.get` returns `{revision, values}`. Pass the expected `revision` and the
-complete new `values` to `settings.update`; read the latest settings after a conflict.
-Settings belong to a specific plugin ID and are stored locally by Player.
+## UI and contributions
 
-```js
-const settings = await ctx.call('settings.get');
-await ctx.call('settings.update', {
-  revision: settings.revision,
-  values: { ...settings.values, greeting: 'Hello' }
-});
-ctx.ui.invalidate();
-```
+The manifest registers `page`, `settings`, `search`, `track-action`, or `player-widget`.
+Each needs `id`, `kind`, `label`; optional fields are `description`, `icon`, `order`.
+Local IDs use `[a-z0-9-]`, up to 64 characters. `player-widget` requires slot
+`player.actions` or `player.status`. Only `page` supports `showInMenu: false`.
 
-Run this snippet inside an asynchronous handler with the `settings` permission.
-Secrets use `secrets.has`, `secrets.get`, `secrets.set`, and `secrets.delete` with
-`key` (`set` also takes `value`); they require `secrets`.
-Keep passwords out of ordinary settings, logs, and UI. Use `has` to check whether
-a secret exists without loading its value just to render a form.
+Native `render` returns a tree of `group`, `text`, `input`, `button`, `toggle`, or
+`results` nodes. Their fields are the same data contract across library and APK plugins:
 
-## plugin.json contributions
-
-| `kind` | Placement | Handler |
-| --- | --- | --- |
-| `page` | A page and sidebar entry | `render`; `viewId` is the contribution ID |
-| `settings` | A settings section | `render` |
-| `search` | A block in global search | `search`, `renderSearch` |
-| `track-action` | A track's context menu | `action`, `payload.track` |
-| `player-widget` | `player.actions` or `player.status` | `render` |
-
-Each contribution needs `id`, `kind`, and `label`; optional fields include
-`description`, `icon`, and `order`. Local IDs use `[a-z0-9-]` and are limited
-to 64 characters. `player-widget` requires a `slot`.
-A `page` can set `showInMenu: false` while remaining accessible through
-`ctx.ui.navigate()`. Other contribution kinds reject this field.
-All contributions require the `ui` permission.
-
-## UI tree
-
-| `type` | Main fields |
+| Node | Main fields |
 | --- | --- |
 | `group` | `title?`, `children?` |
 | `text` | `text`, `tone?` (`error` for errors) |
 | `input` | `key`, `label`, `value?`, `inputType?` (`text` / `password`) |
 | `button` | `label`, `action`, `payload?`, `disabled?` |
 | `toggle` | `label`, `value`, `action`, `payload?`, `disabled?` |
-| `results` | `items` — result rows |
+| `results` | `items` |
 
-Form values arrive in `action.fields`, indexed by `key`. Call `ctx.ui.invalidate()`
-to refresh state after saving. The host applies Player's theme and shared styles,
-shows pending feedback on the clicked button, and blocks duplicate actions.
-UI trees do not contain HTML, CSS, or Vue components. Limits are 12 levels of depth,
-100 children per node, and 1000 rows in `results`.
+Forms submit keyed values in `fields`. Player applies its theme, shared controls,
+and pending-button animation. UI data does not contain HTML, CSS, or executable code.
+Limits: 12 levels, 100 children per node, 1000 result rows. Search rows are
+`{id, title, subtitle?, coverHash?, status?, actions?}`. Their actions receive
+`payload.resourceId`; track-menu actions receive `payload.track`.
 
-Search returns `{items, nextCursor}`. A row is `{id, title, subtitle?, coverHash?,
-status?, actions?}`; its action receives `payload.resourceId`, not a library track ID.
-The plugin defines its opaque cursor format.
+## Desktop ABI 1
 
-Working examples: [Hello](../examples/hello/main.js), [Soulseek](../soulseek/main.js).
-Full host contract: [SDK scope](https://github.com/verncat/player/blob/feat/plugins/docs/plugins/scope/sdk-ui-scope.md).
+The SDK's `export_plugin!` macro exports:
+
+| Symbol | C signature / purpose |
+| --- | --- |
+| `player_plugin_abi_version` | `uint32_t(void)`; returns `1` |
+| `player_plugin_id` | `const char *(void)`; stable NUL-terminated ID |
+| `player_plugin_create` | `void *(void)`; new activation instance |
+| `player_plugin_call` | `Buffer(void *, const uint8_t *, size_t, HostApi)` |
+| `player_plugin_free` | `void(Buffer)`; release a plugin-produced response |
+| `player_plugin_destroy` | `void(void *)`; destroy the instance |
+
+`Buffer` is `{uint8_t *data; size_t len;}`. `HostApi` contains `void *context`,
+a host callback `Buffer(context, bytes, len)`, and `void free(Buffer)`.
+The producing allocator always frees its own buffers. JSON requests are
+`{method, args}`; responses are `{ok: true, value}` or `{ok: false, error}`.
+Requests/responses are limited to 1 MiB. Buffers, instance pointers, and the host
+callback context are valid only under their documented ownership; never retain a
+host callback beyond the current call or unwind across a C/JNI boundary.
+The Rust SDK catches panics at exported call boundaries.
+
+Android uses the same JSON lifecycle/host services through Kotlin/JNI, rather than
+opening desktop libraries: [APK example](../examples/android-native/README.md).

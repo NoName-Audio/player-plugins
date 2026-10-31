@@ -1,79 +1,49 @@
-# Plugin catalog
+# Native plugin catalog
 
 [Documentation](README.md) · [catalog.json](../catalog.json)
 
-Player fetches the listing from
-`https://raw.githubusercontent.com/verncat/player-plugins/main/catalog.json`.
-The repository must be public. Fetching the catalog does not download executable
-code: the package is downloaded separately after selecting Install.
+Player fetches `https://raw.githubusercontent.com/verncat/player-plugins/main/catalog.json`.
+The current schema is **2**; schema 1 described script packages and is rejected.
+There is no bundled fallback or disk cache. Errors clear the listing and appear as toasts.
 
-## Entry format
+## Format
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "updatedAt": "2026-10-31",
-  "plugins": [
-    {
-      "id": "example.hello",
-      "name": "Hello Player",
-      "description": "An example extension with a page, settings and playback events.",
-      "repository": "https://github.com/verncat/player-plugins",
-      "installUrl": "https://github.com/verncat/player-plugins/tree/main/examples/hello",
-      "addedAt": "2026-10-27",
-      "updatedAt": "2026-10-31",
-      "version": "1.0.0",
-      "author": "Player contributors",
-      "platforms": ["macos", "windows", "linux", "android"],
-      "tags": ["example", "playback", "settings"]
-    }
-  ]
+  "plugins": []
 }
 ```
 
-| Field | Rule |
-| --- | --- |
-| `schemaVersion` | Whole-file schema version; currently `1` |
-| Catalog `updatedAt` | Calendar date in `YYYY-MM-DD` format |
-| `plugins` | At most 256 entries with unique IDs |
-| `id`, `name`, `description`, `repository`, `addedAt`, `platforms` | Required entry fields |
-| `installUrl` | HTTPS link to a `plugin.json` + `main.js` directory or a packaged `.player-plugin`; defaults to `repository` |
-| `version`, `author`, `image`, `updatedAt`, `tags` | Optional entry metadata |
-| `tags` | Up to 12 nonempty tags, each up to 40 UTF-8 bytes |
+The catalog is initially empty because the previous Hello entry installed source
+JavaScript. Add a native entry only after its compiled artifact URL is published.
+Discord/Soulseek remain bundled packages; Android APKs are installed through Android
+and connected through Find APK plugins.
 
-IDs, names, platforms, authors, images, and versions follow the
-[manifest rules](development.md#pluginjson-fields). Repository/install URLs must
-use HTTPS without embedded credentials. `addedAt` cannot be later than the catalog
-date; an entry's update date must fall between its addition date and the catalog date.
-The entire response is limited to 512 KiB. Unknown fields or an invalid entry cause
-the entire response to be rejected.
+Each entry requires `id`, `name`, `description`, `repository`, `addedAt`, and `platforms`.
+Optional fields are `installUrl`, `updatedAt`, `version`, `author`, `image`, and `tags`.
+`installUrl` should point to a built `.player-plugin`; a GitHub directory must contain
+`plugin.player-plugin`. A source manifest alone is insufficient. Without installUrl,
+Player uses repository. Metadata follows the [manifest rules](development.md#manifest-rules).
 
-## Add or update an entry
+Dates use calendar `YYYY-MM-DD`. Preserve `addedAt` on updates; entry `updatedAt`
+falls between its addition and catalog update dates. URLs use HTTPS without credentials.
+Limits: 512 KiB total, 256 unique entries, 12 tags of at most 40 UTF-8 bytes each.
+Unknown fields and invalid entries reject the entire response.
 
-1. Prepare an existing package with a stable ID and published `plugin.json` / `main.js`.
-2. Set installUrl to the selected directory; a monorepo root URL will not locate a nested package.
-3. Match the ID, name, version, and platforms to the manifest. Preserve `addedAt` during updates.
-4. Update the entry and catalog `updatedAt` fields; run `pnpm test` and `pnpm test:plugin-sdk`.
-5. Publish to `main`, then select Refresh catalog in Player.
+## Publish
 
-The current `tests/packages.test.mjs` checks this repository's entries and known
-package directories. Add each new local plugin to the test's `folders` array.
-Player supports catalog links to other public repositories, but this repository's
-local consistency check currently expects its own packages.
+1. Build native libraries for the advertised platform/CPU targets.
+2. Package them with `player-plugin-pack` and publish the file, for example as a release asset.
+3. Add metadata with the actual package ID, version, and installUrl; update catalog dates.
+4. Run `cargo test --workspace --locked` and test installing the real package in Player.
+5. Push `main`; users can select Refresh catalog.
 
-External packages with `player.*` IDs or `native.discord` / `native.soulseek`
-permissions are rejected: Discord and Soulseek already ship with Player.
-The Android example connects through an installed APK and Find APK plugins;
-it is not listed in this JSON catalog.
+Catalog metadata grants no permissions and does not replace the downloaded manifest.
+Player verifies the selected ID and content fingerprint, then requests approval before
+installation. Library code is loaded only on enable. Native plugins execute with Player's
+system access; the fingerprint verifies content, not publisher identity.
 
-## Fetching and installation
-
-The list refreshes when the section opens and through Refresh catalog. There is
-no bundled copy, disk cache, or offline fallback. On failure, the previous list
-is cleared and a toast appears; file and direct-URL installation remain available.
-
-After Install, Player validates the actual manifest and matching ID, then presents
-permissions and a fingerprint. Catalog metadata does not grant permissions,
-authenticate authors, or automatically update installed code. Updating bundled
-packages through the submodule is a separate operation: see
-[delivery](tooling.md#player-integration).
+Publishing the catalog does not update installed or bundled code. Bundled updates use
+the [Player submodule](tooling.md#player-integration).

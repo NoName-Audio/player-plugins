@@ -1,35 +1,34 @@
-# Hello Player
+# Hello native plugin
 
-A regular installable package, `example.hello`, for desktop and Android.
-Use it as a starting point for a new plugin; it needs no native code or external service.
-
-## Files
+`example.hello` is an installable desktop native library. Rust implements the page,
+settings, Save action, playback events, and footer widget. There is no script component.
 
 | File | Purpose |
 | --- | --- |
-| [plugin.json](plugin.json) | Metadata, image, permissions, and contributions |
-| [main.js](main.js) | Settings loading, playback subscription, UI, and the Save action |
+| [Cargo.toml](Cargo.toml) | Rust crate producing a shared library |
+| [plugin.json](plugin.json) | API 2 manifest and contributions |
+| [src/lib.rs](src/lib.rs) | NativePlugin implementation and C ABI exports |
 
-The manifest registers a `home` page, `preferences` settings, and a `status` widget
-in `player.status`. On activation, the code reads `settings.get` and subscribes
-to playback. The page and settings show the current track title and a Greeting field;
-Save writes the greeting using the settings revision. The widget shows the track title
-or Nothing playing. Permissions: `ui`, `settings`, `playback.read`.
-
-## Run
-
-From the player-plugins root:
+From the repository root, build and test:
 
 ```sh
-pnpm plugins:pack examples/hello /tmp/hello.player-plugin
+cargo test -p player-hello-plugin
+cargo build -p player-hello-plugin
 ```
 
-In Player: Settings → Plugins → select the file → approve permissions → enable.
-Alternatively, install from
-`https://github.com/verncat/player-plugins/tree/main/examples/hello`.
+Package on macOS arm64:
 
-For your own package, copy the directory and change the manifest's `id`, `name`,
-author, and links. Contributions in `plugin.json` must match the `viewId` /
-`action` handlers in `main.js`. See [creating a plugin](../../docs/development.md).
+```sh
+cargo run -p player-plugin-sdk --bin player-plugin-pack -- examples/hello /tmp/hello.player-plugin macos-aarch64=target/debug/libplayer_hello_plugin.dylib
+```
 
-[Documentation](../../docs/README.md) · [SDK](../../docs/sdk.md)
+Use the matching target and library on Windows/Linux; see [development](../../docs/development.md).
+Install the `.player-plugin` file through Settings → Plugins, approve its native-code
+access, and enable. A source-only repository URL is not installable until it contains
+a built `plugin.player-plugin` or links to a published native release package.
+
+For a new plugin, copy this crate, add it to the workspace, rename its Cargo package,
+and change the manifest and `export_plugin!` IDs together. Preserve a plugin's ID
+when updating an installed version.
+
+[Documentation](../../docs/README.md) · [SDK and ABI](../../docs/sdk.md)

@@ -1,76 +1,70 @@
-# Tooling, checks, and delivery
+# Native tooling and delivery
 
 [Documentation](README.md) · [File structure](structure.md)
 
-## player-plugins commands
-
-Run all commands in this table from this repository's root.
+All commands below run from `player-plugins` unless explicitly marked **Player**.
+Node.js, pnpm, and a script bundler are not required for this repository.
 
 | Command | Purpose |
 | --- | --- |
-| `pnpm install --frozen-lockfile` | Install pinned tooling dependencies |
-| `pnpm test` | Package all four plugins and check JS syntax and catalog consistency |
-| `pnpm test:plugin-sdk` | Check `sdk.d.ts` declarations, not every plugin's `main.js` |
-| `pnpm plugins:pack <folder> [output]` | Produce a JSON package from two files |
-| `pnpm plugins:android:build` | Build the Android example's debug APK through the Gradle wrapper |
+| `cargo test --workspace --locked` | SDK, package UI/actions, transfer intentions, and JNI-core tests |
+| `cargo build --workspace --locked` | Build libraries and native CLI tools for the host |
+| `cargo build --release -p player-hello-plugin` | Build the desktop example |
+| `cargo run -p player-plugin-sdk --bin player-plugin-pack -- <folder> <output> <os-arch=library>...` | Package compiled native libraries |
+| `./gradlew -p examples/android-native assembleDebug` | Build the standalone Android APK |
 
-[package-plugin.mjs](../scripts/package-plugin.mjs) reads `plugin.json` and `main.js`,
-produces `{manifest, script}`, and checks the 4 MiB limit. Without an output path,
-it writes `<folder>/<id>-<version>.player-plugin`. This packages files; it does not
-compile code or fully validate Player's schema and permission rules.
+The packer is [player-plugin-pack.rs](../native-sdk/src/bin/player-plugin-pack.rs).
+It reads `plugin.json`, embeds binary bytes and SHA-256 by target, and writes
+`{manifest, native: {kind: "library", artifacts}}`. It does not compile libraries,
+execute their constructors, or guarantee full host manifest validation.
 
-Gradle calls [build-android-plugin.mjs](../scripts/build-android-plugin.mjs) with
-the example directory and comma-separated ABIs. The script selects the NDK from
-`ANDROID_NDK_HOME` or the SDK from `ANDROID_HOME` / `ANDROID_SDK_ROOT`, runs Cargo
-with `--locked --release`, and copies `.so` files to `build/generated/jniLibs/<abi>/`.
-Gradle handles APK and asset packaging. See the [Android example](../examples/android-native/README.md).
+The Android helper is [player-plugin-android-build.rs](../native-sdk/src/bin/player-plugin-android-build.rs).
+Gradle runs it through Cargo. It selects the NDK from `ANDROID_NDK_HOME` or the SDK
+from `ANDROID_HOME` / `ANDROID_SDK_ROOT`, builds with `--locked --release`, and copies
+JNI libraries into Gradle's generated output. The workspace root lockfile is used.
 
-## Automated checks
+## Checks
 
-[check.yml](../.github/workflows/check.yml) runs on push and pull request:
-Node.js 22, pnpm 10, installation from the lockfile, `pnpm test`, and `pnpm test:plugin-sdk`.
-It does not build APKs or test live Discord/Soulseek connections.
+[check.yml](../.github/workflows/check.yml) tests and builds the Rust workspace on
+macOS, Linux, and Windows. Android APK/device integration is separate.
+The SDK's `testing` feature provides a mock `Host` for native package tests.
 
-[packages.test.mjs](../tests/packages.test.mjs) uses actual package sources.
-It checks that the packer works from another working directory, IDs are unique,
-scripts parse successfully, and catalog install URLs point to existing local
-packages with matching IDs, names, versions, and platforms.
-
-This repository's tests do not run the Worker or native gateway. Integration checks
-run in the **Player** repository, for example:
+In the **Player** repository, native host checks include:
 
 ```sh
 pnpm test:plugins
+pnpm test:plugin-sdk
+pnpm exec vue-tsc --noEmit
 cargo test --manifest-path src-tauri/Cargo.toml --lib
 ```
 
+Host tests compile and load a real Hello shared library through C ABI 1, verify host
+callbacks, reject stale identities, and test frontend IPC/permission routing. Live
+Discord/Soulseek services and signed release builds require their platform checks.
+
 ## Player integration
 
-In Player, `plugins/` is a git submodule pinned to a specific commit of this repository.
-A sibling `../player-plugins` checkout and `Player/plugins/` are independent:
-editing files in the former does not automatically update the latter.
-
-Before building Player for the first time, run this from the **Player** root:
+`Player/plugins/` is a pinned submodule of this repository. A sibling checkout at
+`../player-plugins` is independent. From the **Player** root:
 
 ```sh
 git submodule update --init -- plugins
 ```
 
-To include updated bundled packages in a build, publish their changes to this
-repository first, then run these commands from the **Player** root:
+To update bundled code after publishing a tested plugin commit:
 
 ```sh
 git -C plugins fetch origin main
 git -C plugins checkout --detach origin/main
 git add plugins
-git commit -m "Update bundled plugins"
+git commit -m "Update bundled native plugins"
 ```
 
-Test Player and publish its commit through the usual workflow. Its release workflow
-fetches the pinned submodule; changes to this repository's `main` do not replace
-code in an already built app. Changes only to `catalog.json` become available
-without updating the gitlink or rebuilding Player.
+Player links Discord/Soulseek Rust crates with default FFI exports disabled. External
+plugins use the dynamic loader instead. Release CI must fetch the pinned submodule
+before Cargo resolves these path dependencies.
 
-The runtime, UI renderer, and native adapters remain in Player. Packages
-`player.discord-rpc` and `player.soulseek` cannot be reinstalled as ordinary
-external `.player-plugin` files.
+On macOS, hardened release binaries retain their normal library signature validation.
+This implementation does not add an entitlement disabling it. Native artifacts must
+meet those signing requirements. See Apple's
+[library validation documentation](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.cs.disable-library-validation).

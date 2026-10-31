@@ -2,7 +2,7 @@
   "id": "example.android-native",
   "name": "Android native example",
   "version": "0.1.0",
-  "apiVersion": 1,
+  "apiVersion": 2,
   "description": "Loads Kotlin and Rust from an independently installed APK.",
   "author": {
     "name": "Player contributors"
@@ -12,7 +12,8 @@
   ],
   "permissions": [
     "ui",
-    "native.android"
+    "native.android",
+    "settings"
   ],
   "contributions": [
     {
