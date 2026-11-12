@@ -1,26 +1,26 @@
 {
   "schemaVersion": 2,
-  "updatedAt": "2026-11-01",
+  "updatedAt": "2026-11-12",
   "plugins": [
     {
       "id": "player.discord-rpc",
       "name": "Discord RPC",
       "description": "Share your listening activity with Discord.",
       "repository": "https://github.com/NoName-Audio/player-plugins",
-      "version": "1.0.0",
+      "version": "1.0.2",
       "author": {
         "name": "Player contributors",
         "url": "https://github.com/NoName-Audio/player/graphs/contributors"
       },
-      "image": "https://raw.githubusercontent.com/NoName-Audio/player-plugins/main/discord-rpc/assets/discord.png",
+      "image": "https://raw.githubusercontent.com/NoName-Audio/player-plugins/native-v1.0.2/discord-rpc/assets/discord.png",
       "platforms": [
         "macos",
         "windows",
         "linux"
       ],
-      "installUrl": "https://github.com/NoName-Audio/player-plugins/releases/download/native-v1.0.1/player.discord-rpc.player-plugin",
+      "installUrl": "https://github.com/NoName-Audio/player-plugins/releases/download/native-v1.0.2/player.discord-rpc.player-plugin",
       "addedAt": "2026-10-31",
-      "updatedAt": "2026-11-01",
+      "updatedAt": "2026-11-12",
       "tags": [
         "native",
         "presence"
@@ -31,26 +31,26 @@
       "name": "Soulseek",
       "description": "Search, preview, download and replace music from Soulseek.",
       "repository": "https://github.com/NoName-Audio/player-plugins",
-      "version": "1.0.0",
+      "version": "1.0.2",
       "author": {
         "name": "Player contributors",
         "url": "https://github.com/NoName-Audio/player/graphs/contributors"
       },
-      "image": "https://raw.githubusercontent.com/NoName-Audio/player-plugins/main/soulseek/assets/soulseek.png",
+      "image": "https://raw.githubusercontent.com/NoName-Audio/player-plugins/native-v1.0.2/soulseek/assets/soulseek.png",
       "platforms": [
         "macos",
         "windows",
         "linux",
         "android"
       ],
-      "installUrl": "https://github.com/NoName-Audio/player-plugins/releases/download/native-v1.0.1/player.soulseek.player-plugin",
+      "installUrl": "https://github.com/NoName-Audio/player-plugins/releases/download/native-v1.0.2/player.soulseek.player-plugin",
       "addedAt": "2026-10-31",
-      "updatedAt": "2026-11-01",
+      "updatedAt": "2026-11-12",
       "tags": [
         "native",
         "music"
       ],
-      "androidApkUrl": "https://github.com/NoName-Audio/player-plugins/releases/download/native-v1.0.1/player.soulseek.apk"
+      "androidApkUrl": "https://github.com/NoName-Audio/player-plugins/releases/download/native-v1.0.2/player.soulseek.apk"
     }
   ]
 }
