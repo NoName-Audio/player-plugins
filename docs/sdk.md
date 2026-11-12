@@ -118,3 +118,31 @@ The Rust SDK catches panics at exported call boundaries.
 
 Android uses the same JSON lifecycle/host services through Kotlin/JNI, rather than
 opening desktop libraries: [APK example](../examples/android-native/README.md).
+
+## Android reflection ABI 2
+
+The APK entry class exposes a public no-argument constructor, `apiVersion(): Int`
+(returning `2`), `pluginId(): String`, `close()`, and
+`call(method: String, argsJson: String, host: (String, String) -> String): String`.
+The callback's JVM type is `kotlin.jvm.functions.Function2`; its `invoke` method
+is also part of the ABI. The host loads each installed APK with a parent-first
+class loader, so that interface must resolve to the host's class, not a separately
+renamed copy from the plugin.
+
+Release builds shrink the host and each plugin independently. Every participating
+APK must retain the callback interface and its members with:
+
+```proguard
+-keep interface kotlin.jvm.functions.Function2 { *; }
+```
+
+Plugin APKs must additionally keep their entire entry class (including JNI methods),
+as shown in the example's `proguard-rules.pro`. Keeping only the entry class or only
+the callback class name is insufficient: independent obfuscation can rename either
+the callback type or `invoke`, breaking reflection or callback dispatch. Keep the
+Kotlin runtime dependency supplied by the Kotlin Android plugin; do not relocate
+the shared interface. Test a minified host against an independently minified plugin,
+not only debug APKs. Existing installations built without these rules need updated
+host/plugin APKs and a Player restart before reloading native libraries.
+
+The Discord RPC plugin is desktop-only and has no Android reflection entrypoint.
