@@ -65,9 +65,10 @@ hashes and matching manifests before merging target packages. Release assets are
 uploaded before the generated catalog is committed to main; failed builds leave the
 catalog unchanged. Run `python3 -m unittest discover -s tools -p 'test_*.py'` locally.
 
-For `native-v1.0.3`, both desktop plugin manifests and the Soulseek Android manifest
-use package version `1.0.3`, aligned with their Cargo package versions and lockfile.
-The Android APK uses `versionName = "1.0.3"` and `versionCode = 4`.
+For `native-v1.0.4`, both desktop plugin manifests and the Soulseek Android manifest
+use package version `1.0.4`, aligned with their Cargo package versions and lockfile.
+The Android APK uses `versionName = "1.0.4"` and `versionCode = 5`.
+The immutable `native-v1.0.3` tag was skipped before publication due to a stale lockfile.
 
 CI builds the minified, non-debuggable release APK and signs it using repository
 Actions secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_ALIAS`, and

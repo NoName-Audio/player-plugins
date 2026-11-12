@@ -326,7 +326,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "player-discord-plugin"
-version = "1.0.2"
+version = "1.0.4"
 dependencies = [
  "discord-rich-presence",
  "player-plugin-sdk",
@@ -372,7 +372,7 @@ dependencies = [
 
 [[package]]
 name = "player-soulseek-android"
-version = "1.0.2"
+version = "1.0.4"
 dependencies = [
  "player-plugin-android-sdk",
  "player-soulseek-plugin",
@@ -380,7 +380,7 @@ dependencies = [
 
 [[package]]
 name = "player-soulseek-plugin"
-version = "1.0.2"
+version = "1.0.4"
 dependencies = [
  "player-plugin-sdk",
  "serde",
