@@ -65,14 +65,23 @@ hashes and matching manifests before merging target packages. Release assets are
 uploaded before the generated catalog is committed to main; failed builds leave the
 catalog unchanged. Run `python3 -m unittest discover -s tools -p 'test_*.py'` locally.
 
-For `native-v1.0.2`, both desktop plugin manifests and the Soulseek Android manifest
-use package version `1.0.2`, aligned with their Cargo package versions and lockfile.
-The Android APK uses `versionName = "1.0.2"` and `versionCode = 3`.
+For `native-v1.0.3`, both desktop plugin manifests and the Soulseek Android manifest
+use package version `1.0.3`, aligned with their Cargo package versions and lockfile.
+The Android APK uses `versionName = "1.0.3"` and `versionCode = 4`.
 
-The APK is currently an experimental debug-signed build. CI debug keys are ephemeral;
-updates from another signer may require uninstall/reinstall. Production APK updates
-require a persistent release signing key configured separately. No Player rebuild is
-needed for either desktop package installation or APK discovery.
+CI builds the minified, non-debuggable release APK and signs it using repository
+Actions secrets `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_ALIAS`, and
+`ANDROID_KEYSTORE_PASSWORD` (store and key password). `ANDROID_SIGNER_SHA256` is a
+repository variable containing the expected lowercase SHA-256 certificate digest:
+`3442a4df21b43285e8165c6a16425b0f9286487f0361714e0467f3492f024198`.
+Missing credentials or a mismatched certificate fail the release; there is no debug
+fallback. The decoded key is restricted to the signing step and removed on exit.
+Keep encrypted offline backups of the production keystore, alias, and passwords;
+GitHub secrets are not a recoverable backup. Restore the same key when rotating CI
+credentials: generating a replacement key breaks Android update continuity.
+Users migrating from older debug-signed APKs must back up plugin settings and
+uninstall/reinstall once. Later production releases update in place with this key.
+No Player rebuild is needed for desktop package installation or APK discovery.
 
 On macOS, hardened release binaries retain their normal library signature validation.
 This implementation does not add an entitlement disabling it. Native artifacts must

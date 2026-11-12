@@ -96,11 +96,31 @@ jobs:
       - name: Build independent Soulseek APK
         run: |
           export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/29.0.13846066"
-          ./gradlew -p soulseek/android assembleDebug -PpluginAbis=arm64-v8a,armeabi-v7a,x86_64,x86
-      - name: Collect APK
+          ./gradlew -p soulseek/android assembleRelease -PpluginAbis=arm64-v8a,armeabi-v7a,x86_64,x86
+      - name: Sign and verify production APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_ALIAS: ${{ secrets.ANDROID_KEYSTORE_ALIAS }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          EXPECTED_SHA256: ${{ vars.ANDROID_SIGNER_SHA256 }}
         run: |
+          set -euo pipefail
+          : "${KEYSTORE_BASE64:?Missing production keystore}"
+          : "${KEYSTORE_ALIAS:?Missing production alias}"
+          : "${KEYSTORE_PASS:?Missing production password}"
+          : "${EXPECTED_SHA256:?Missing production certificate fingerprint}"
+          keyfile=$(mktemp "$RUNNER_TEMP/plugin-keystore.XXXXXX")
+          trap 'rm -f "$keyfile"' EXIT
+          chmod 600 "$keyfile"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keyfile"
+          tools="$ANDROID_HOME/build-tools/36.0.0"
           mkdir -p dist
-          cp soulseek/android/build/outputs/apk/debug/*.apk dist/player.soulseek.apk
+          "$tools/zipalign" -f -p 4 soulseek/android/build/outputs/apk/release/*-unsigned.apk "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" sign --ks "$keyfile" --ks-key-alias "$KEYSTORE_ALIAS" --ks-pass env:KEYSTORE_PASS --key-pass env:KEYSTORE_PASS --out dist/player.soulseek.apk "$RUNNER_TEMP/aligned.apk"
+          "$tools/apksigner" verify --verbose --print-certs dist/player.soulseek.apk
+          actual=$("$tools/apksigner" verify --print-certs dist/player.soulseek.apk | awk '/Signer #1 certificate SHA-256 digest:/ {print $NF}')
+          test "$actual" = "$EXPECTED_SHA256"
+          "$tools/zipalign" -c -p 4 dist/player.soulseek.apk
       - uses: actions/upload-artifact@v4
         with:
           name: native-android
@@ -127,7 +147,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --draft --title "Native plugins ${RELEASE_TAG}" --notes 'Independent native Discord and Soulseek extensions. Desktop packages contain macOS, Windows and Linux libraries. The Android APK is an experimental debug-signed build; production update distribution requires a persistent release signing key.'
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --draft --title "Native plugins ${RELEASE_TAG}" --notes 'Independent native Discord and Soulseek extensions. Desktop packages contain macOS, Windows and Linux libraries. Soulseek Android is a minified, non-debuggable release signed with the persistent production certificate (SHA-256 3442a4df21b43285e8165c6a16425b0f9286487f0361714e0467f3492f024198). Older debug-signed APKs require a one-time uninstall/reinstall; subsequent production releases update in place. Back up plugin settings before migration.'
           gh release upload "$RELEASE_TAG" dist/* --clobber
           gh release edit "$RELEASE_TAG" --draft=false
       - name: Publish catalog
