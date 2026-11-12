@@ -65,6 +65,10 @@ hashes and matching manifests before merging target packages. Release assets are
 uploaded before the generated catalog is committed to main; failed builds leave the
 catalog unchanged. Run `python3 -m unittest discover -s tools -p 'test_*.py'` locally.
 
+For `native-v1.0.2`, both desktop plugin manifests and the Soulseek Android manifest
+use package version `1.0.2`, aligned with their Cargo package versions and lockfile.
+The Android APK uses `versionName = "1.0.2"` and `versionCode = 3`.
+
 The APK is currently an experimental debug-signed build. CI debug keys are ephemeral;
 updates from another signer may require uninstall/reinstall. Production APK updates
 require a persistent release signing key configured separately. No Player rebuild is

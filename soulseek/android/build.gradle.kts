@@ -35,8 +35,8 @@ android {
         applicationId = "dev.verncat.player.soulseek.plugin"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 3
+        versionName = "1.0.2"
         ndk { abiFilters += pluginAbis }
     }
     buildTypes {
