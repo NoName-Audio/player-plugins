@@ -32,6 +32,15 @@
       "slot": "player.status"
     }
   ],
+  "attachments": [
+    {
+      "id": "album-greeting",
+      "target": "AlbumCard",
+      "position": "after",
+      "view": "album-greeting",
+      "order": 100
+    }
+  ],
   "author": {
     "name": "Player contributors",
     "url": "https://github.com/verncat"

@@ -34,6 +34,38 @@ impl NativePlugin for Plugin {
                     {"type":"button","label":"Save","action":"save"}]}),
                 )
             }
+            "renderAttachment" => {
+                if args["attachmentId"] != "album-greeting"
+                    || args["viewId"] != "album-greeting"
+                    || args["target"] != "AlbumCard"
+                {
+                    return Ok(Value::Null);
+                }
+                let Some(album) = args["context"]["album"]["album"]
+                    .as_str()
+                    .filter(|name| !name.is_empty())
+                else {
+                    return Ok(Value::Null);
+                };
+                Ok(json!({"type":"group","children":[
+                    {"type":"text","text":format!("Hello, {album}!")},
+                    {"type":"button","label":"Open Hello","action":"open-album"}
+                ]}))
+            }
+            "action"
+                if args["action"] == "open-album"
+                    && args["attachmentId"] == "album-greeting"
+                    && args["viewId"] == "album-greeting"
+                    && args["target"] == "AlbumCard" =>
+            {
+                host.call(
+                    "host.navigate",
+                    json!({"pageId":"home","context":{
+                        "album":args["context"]["album"],"instanceId":args["instanceId"]
+                    }}),
+                )?;
+                Ok(Value::Null)
+            }
             "action" if args["action"] == "save" => {
                 let latest = host.call("settings.get", json!({}))?;
                 let mut values = latest["values"].clone();
@@ -97,6 +129,30 @@ mod tests {
                 .call("render", json!({"viewId":"status"}), &host)
                 .unwrap()["text"],
             "Nothing playing"
+        );
+    }
+    #[test]
+    fn attachments_render_per_album_and_actions_keep_host_context() {
+        let host = TestHost::new(|method, args| {
+            assert_eq!(method, "host.navigate");
+            assert_eq!(args["pageId"], "home");
+            assert_eq!(args["context"]["album"]["album"], "Example");
+            assert_eq!(args["context"]["instanceId"], "card-2");
+            Ok(Value::Null)
+        });
+        let mut plugin = Plugin::default();
+        let mut scope = json!({"attachmentId":"album-greeting","viewId":"album-greeting",
+            "target":"AlbumCard","instanceId":"card-2","context":{"album":{"album":"Example"}}});
+        let tree = plugin
+            .call("renderAttachment", scope.clone(), &host)
+            .unwrap();
+        assert_eq!(tree["children"][0]["text"], "Hello, Example!");
+        scope["action"] = json!("open-album");
+        plugin.call("action", scope.clone(), &host).unwrap();
+        scope["context"] = json!({});
+        assert_eq!(
+            plugin.call("renderAttachment", scope, &host).unwrap(),
+            Value::Null
         );
     }
 }

@@ -13,6 +13,7 @@ JavaScript plugin runtime, `main.js`, or script SDK.
 | [examples/android-native/](examples/android-native/README.md) | Standalone Kotlin/Rust APK example |
 | [catalog.json](catalog.json) | Public native package listing, schema 2 |
 | [docs/](docs/README.md) | Author and maintainer documentation |
+| [Attachment targets](docs/attachment-targets.md) | Generated Player target and context reference |
 
 Full layout: [repository structure](docs/structure.md).
 
@@ -42,6 +43,22 @@ Desktop extensions load as `.dylib`, `.so`, or `.dll` through a versioned C ABI.
 Android extensions are separately installed APKs with Kotlin entrypoints and Rust JNI.
 Both receive lifecycle, render, action, search, playback, and event requests.
 Player renders returned UI data using its shared components and theme.
+Optional API 2 [component attachments](docs/sdk.md#component-attachments-optional-api-2-extension)
+render native UI before/after explicitly exposed targets such as `AlbumCard`,
+with per-instance context and actions. There is no API/ABI bump; older strict
+API 2 hosts reject manifests with `attachments`, so these packages need an updated host.
+
+Use the [attachment target reference](docs/attachment-targets.md) to select a
+supported target and inspect its context. This reference is generated from
+Player's explicit `withPluginAttachments` registrations (TypeScript AST) and
+their source context types, rather than maintained as a separate target list.
+In the [Player repository](https://github.com/NoName-Audio/player), run
+`pnpm attachments:docs` to write `plugins/docs/attachment-targets.md`, or
+`pnpm attachments:docs --output /tmp/attachment-targets.md` to select another
+output path. Application builds never generate this file. Player CI provides a
+generated preview artifact; a published Player release proposes an update here
+through a cross-repository pull request, not a direct default-branch push.
+
 
 Discord and Soulseek are separately installed native packages. Their IPC/network
 implementations and dependencies are built here, never linked into Player. Player

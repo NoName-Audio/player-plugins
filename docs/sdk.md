@@ -18,6 +18,7 @@ Player performs the asynchronous operation and returns its result.
 | `activate` | `{pluginId, generation}`; initialize the native instance |
 | `deactivate` | Release resources; host permissions have already been revoked on disable |
 | `render` | `{viewId, context}` → UI node |
+| `renderAttachment` | `{attachmentId, viewId, target, instanceId, context}` → UI node or `null` |
 | `action` | `{action, payload, fields, context}` → JSON value or error |
 | `search` | `{providerId, query, cursor, limit}` → `{items, nextCursor}` |
 | `renderSearch` | `{ids}` → refreshed rows or `null` to keep existing rows |
@@ -93,6 +94,55 @@ and pending-button animation. UI data does not contain HTML, CSS, or executable 
 Limits: 12 levels, 100 children per node, 1000 result rows. Search rows are
 `{id, title, subtitle?, coverHash?, status?, actions?}`. Their actions receive
 `payload.resourceId`; track-menu actions receive `payload.track`.
+
+### Component attachments (optional API 2 extension)
+
+Attachments are independent of contributions; existing pages, settings, search,
+track actions and widgets are unchanged. Declare `ui` permission and an optional
+top-level array (at most 32 entries):
+
+```json
+"attachments": [
+  {"id":"album-extra-info","target":"AlbumCard","position":"after","view":"album-extra-info","order":100}
+]
+```
+
+Each entry accepts only `id`, `target`, `position`, `view`, and optional `order`.
+`id` is unique within attachments; both `id` and `view` use `[a-z0-9-]` with
+1–64 characters. Targets use ASCII letters/digits, `.`, `_`, or `-`, with
+1–128 characters, and are explicit case-sensitive public names. `position` is
+`before` or `after`; `order` is a signed 32-bit integer defaulting to zero.
+Enabled, supported, running plugins sort by order, then stable plugin/attachment
+identity. Unknown targets render nothing; a declaration cannot expose a target.
+`AlbumCard` exposes `context: {album}` with a serializable album projection,
+including its `album` name. Treat context as data, not component props or internals.
+
+Handle `renderAttachment` separately from `render`. Return the same validated UI
+tree above, or JSON `null` when the instance does not apply (no placeholder/error).
+`instanceId` is host-generated and stable only for one mounted target's lifetime.
+Buttons and toggles still invoke `action`; in addition to `action`, `payload`, and
+`fields`, the host supplies `attachmentId`, `viewId`, `target`, `instanceId`, and
+`context`. Those scope fields are host-controlled, not overridable by UI payloads.
+Use this scope to distinguish cards; do not retain a Host callback or assume a
+component instance is exposed. `host.invalidate` also refreshes attachments.
+The host discards stale renders/actions after context changes, unmount or activation
+changes. Existing permission checks remain authoritative.
+
+Before/after UI consists of siblings, without a DOM wrapper. It can affect flex/grid
+layout and structural CSS selectors; keep card attachments small. Only explicitly
+wrapped components are supported, not arbitrary DOM selectors. Attachment UI does
+not recursively expose targets. Wrapper component refs are not original component
+refs; transitions, KeepAlive, Teleport and multi-root targets require explicit host
+support rather than assumed transparency.
+
+There is **no Plugin API or ABI version bump**: this is an additive API 2 feature.
+Older strict API 2 hosts reject manifests containing `attachments`; API 2 alone
+does not negotiate support. Publish attachment-enabled packages for updated hosts,
+or omit the section entirely in packages intended for older hosts (even an empty
+array may be rejected there). The packager validates declarations but cannot make
+an older host support them. See the [Hello example](../examples/hello/README.md)
+for contextual rendering, null output and scoped navigation actions.
+
 
 ## Desktop ABI 1
 

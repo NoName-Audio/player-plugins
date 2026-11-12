@@ -15,6 +15,9 @@ pub trait Host {
     }
 }
 pub trait NativePlugin: Send {
+    /// Dispatches `renderAttachment` with host-scoped attachment/instance context and
+    /// `action` with the same scope. Attachment renders may return `Value::Null`.
+    /// Existing render and action methods remain unchanged.
     fn call(&mut self, method: &str, args: Value, host: &dyn Host) -> Result;
 }
 
@@ -182,6 +185,42 @@ mod tests {
         assert_eq!(decode(&encode(Err("failed".into()))).unwrap_err(), "failed");
         assert!(decode(b"{}").is_err());
         assert!(decode(&encode(Ok(json!("x".repeat(MAX_MESSAGE_BYTES))))).is_err());
+    }
+    #[test]
+    fn attachment_dispatch_preserves_scope_and_null() {
+        struct Attachment;
+        impl NativePlugin for Attachment {
+            fn call(&mut self, method: &str, args: Value, _: &dyn Host) -> Result {
+                match method {
+                    "renderAttachment" => Ok(Value::Null),
+                    "action" => Ok(args),
+                    _ => Err("METHOD_NOT_FOUND".into()),
+                }
+            }
+        }
+        struct TestHost;
+        impl Host for TestHost {
+            fn call(&self, _: &str, _: Value) -> Result {
+                Ok(Value::Null)
+            }
+        }
+        let host = TestHost;
+        let scope = json!({"attachmentId":"album-info","viewId":"album-info",
+            "target":"AlbumCard","instanceId":"host-instance","context":{"album":{"album":"Example"}}});
+        assert_eq!(
+            decode(&invoke(
+                &mut Attachment,
+                "renderAttachment",
+                scope.clone(),
+                &host
+            ))
+            .unwrap(),
+            Value::Null
+        );
+        assert_eq!(
+            decode(&invoke(&mut Attachment, "action", scope.clone(), &host)).unwrap(),
+            scope
+        );
     }
 }
 
