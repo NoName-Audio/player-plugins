@@ -175,15 +175,18 @@ The APK entry class exposes a public no-argument constructor, `apiVersion(): Int
 (returning `2`), `pluginId(): String`, `close()`, and
 `call(method: String, argsJson: String, host: (String, String) -> String): String`.
 The callback's JVM type is `kotlin.jvm.functions.Function2`; its `invoke` method
-is also part of the ABI. The host loads each installed APK with a parent-first
-class loader, so that interface must resolve to the host's class, not a separately
-renamed copy from the plugin.
+and `kotlin.Function` superinterface are also part of the ABI. The host delegates
+Android platform classes to the platform loader and these two interfaces to the
+host. All other classes resolve only inside the plugin APK, including Kotlin
+runtime helpers and private dependencies. Plugins must bundle those dependencies;
+they cannot borrow host libraries. This is linkage isolation, not a security sandbox.
 
 Release builds shrink the host and each plugin independently. Every participating
 APK must retain the callback interface and its members with:
 
 ```proguard
 -keep interface kotlin.jvm.functions.Function2 { *; }
+-keep interface kotlin.Function { *; }
 ```
 
 Plugin APKs must additionally keep their entire entry class (including JNI methods),
@@ -194,5 +197,12 @@ Kotlin runtime dependency supplied by the Kotlin Android plugin; do not relocate
 the shared interface. Test a minified host against an independently minified plugin,
 not only debug APKs. Existing installations built without these rules need updated
 host/plugin APKs and a Player restart before reloading native libraries.
+
+Player's `ApkPluginsTest#soulseekReleaseCallsUsePluginDependenciesAndSharedCallback`
+activates and renders the installed minified Soulseek APK offline, exercising JNI
+and host callbacks without account credentials or downloads. Build the host test
+variant with `-PandroidPluginTestBuildType=release` (local debug signing only for
+this opt-in variant), install the independently minified Soulseek release APK on
+an emulator, and run that instrumentation method against the release host.
 
 The Discord RPC plugin is desktop-only and has no Android reflection entrypoint.

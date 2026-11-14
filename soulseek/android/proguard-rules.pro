@@ -3,3 +3,4 @@
 
 # Resolve the host's callback interface, including invoke, through parent delegation.
 -keep interface kotlin.jvm.functions.Function2 { *; }
+-keep interface kotlin.Function { *; }
