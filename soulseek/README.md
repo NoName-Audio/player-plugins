@@ -50,8 +50,9 @@ audio download is used. Unavailable/empty folders retain a placeholder. Embedded
 audio artwork remains available through metadata extraction on library import.
 While discovery or transfer is pending, search thumbnails use the player's
 existing animated loading stripes. Missing artwork and failures stop the
-animation. Completed preview status follows the active Soulseek track and
-disappears when playback moves elsewhere; ongoing downloads remain visible.
+animation. Completed preview status retains the current track's details and
+Preview/Stop preview and Save to library actions. It follows the active Soulseek
+track and disappears when playback moves elsewhere; ongoing downloads remain visible.
 Cached folder artwork is reapplied when searches refresh, and the current artwork
 is forwarded to preview resources and library imports even from older result rows.
 

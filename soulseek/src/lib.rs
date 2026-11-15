@@ -308,17 +308,22 @@ impl Plugin {
             return Ok(json!({"type":"group","title":"Soulseek connection","children":children}));
         }
         if view == "buffer" {
-            let items: Vec<_> = self.transfers.iter().filter_map(|(id, t)| {
+            let mut items: Vec<_> = self.transfers.iter().filter_map(|(id, t)| {
                 matches!(t["state"].as_str(), Some("starting" | "queued_local" | "queued_remote" | "progress"))
                     .then(|| self.results.get(id).map(|r| self.row(r))).flatten()
             }).collect();
             let count = items.len();
+            let completed_preview = (self.playback["resource"]["pluginId"] == "player.soulseek")
+                .then(|| text(&self.playback["resource"], "resourceId"))
+                .filter(|id| self.transfers.get(id).is_some_and(|t| t["state"] == "completed"));
+            if let Some(r) = completed_preview.as_ref().and_then(|id| self.results.get(id)) {
+                items.push(self.row(r));
+            }
             let (tone, label) = if count > 0 {
                 ("active", format!("Soulseek · {count} active transfer{}", if count == 1 { "" } else { "s" }))
             } else if self.transfers.values().any(|t| matches!(t["state"].as_str(), Some("failed" | "timed_out"))) {
                 ("error", "Soulseek · Download failed".into())
-            } else if self.playback["resource"]["pluginId"] == "player.soulseek"
-                && self.transfers.get(&text(&self.playback["resource"], "resourceId")).is_some_and(|t| t["state"] == "completed") {
+            } else if completed_preview.is_some() {
                 ("success", "Soulseek · Download complete".into())
             } else {
                 return Ok(Value::Null);
@@ -711,14 +716,26 @@ mod tests {
         let mut p = Plugin::default();
         let r = result(0);
         let id = key(&r);
-        p.results.insert(id.clone(), r);
-        p.transfers.insert(id.clone(), json!({"state":"completed"}));
-        p.handle("playback", json!({"resource":{"pluginId":"player.soulseek","resourceId":id}}), &h).unwrap();
-        assert_eq!(p.render(json!({"viewId":"buffer"}), &h).unwrap()["tone"], "success");
-        p.handle("playback", json!({"resource":null}), &h).unwrap();
+        p.results.insert(id.clone(), r.clone());
+        p.transfers.insert(id.clone(), json!({"state":"completed","bytesDownloaded":10_000_000}));
+        p.handle("playback", json!({"playing":true,"resource":{"pluginId":"player.soulseek","resourceId":id}}), &h).unwrap();
+        let menu = p.render(json!({"viewId":"buffer"}), &h).unwrap();
+        assert_eq!(menu["tone"], "success");
+        assert_eq!(menu["label"], "Soulseek · Download complete");
+        assert_eq!(menu["children"][1]["items"], json!([p.row(&r)]));
+        assert_eq!(menu["children"][1]["items"][0]["status"], "Download complete · 9766 KiB");
+        assert_eq!(menu["children"][1]["items"][0]["actions"], json!([
+            {"id":"play","label":"Stop preview"},
+            {"id":"save","label":"Save to library","disabled":false}
+        ]));
+        p.handle("playback", json!({"playing":true,"resource":{"pluginId":"other.plugin","resourceId":id}}), &h).unwrap();
         assert!(p.render(json!({"viewId":"buffer"}), &h).unwrap().is_null());
         p.transfers.insert(id, json!({"state":"progress"}));
-        assert_eq!(p.render(json!({"viewId":"buffer"}), &h).unwrap()["tone"], "active");
+        let menu = p.render(json!({"viewId":"buffer"}), &h).unwrap();
+        assert_eq!(menu["tone"], "active");
+        assert_eq!(menu["label"], "Soulseek · 1 active transfer");
+        assert_eq!(menu["children"][1]["items"], json!([p.row(&r)]));
+        assert_eq!(h.count("soulseek.preview"), 0);
     }
 
     #[test]
