@@ -1,7 +1,7 @@
 {
   "id": "player.soulseek",
   "name": "Soulseek",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "apiVersion": 2,
   "description": "Search, preview, download and replace music from Soulseek.",
   "platforms": [

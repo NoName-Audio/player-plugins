@@ -3,6 +3,9 @@
 Independent native package `player.soulseek`, for desktop and Android.
 Rust implements its UI, search, pagination, cover scheduling, preview, import,
 replacement actions, and persistent transfer intentions.
+Android APK versionName and monotonic versionCode are derived from its plugin
+manifest. Release CI checks the signed APK version against both platform
+manifests before uploading, preventing catalog/APK version mismatches.
 
 | File | Purpose |
 | --- | --- |

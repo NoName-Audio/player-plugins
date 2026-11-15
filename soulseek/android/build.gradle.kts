@@ -6,6 +6,10 @@ plugins {
 }
 
 val pluginAbis = (findProperty("pluginAbis") as? String ?: "arm64-v8a").split(',')
+val pluginVersion = (JsonSlurper().parse(file("plugin.json")) as Map<*, *>)["version"] as String
+val pluginVersionParts = pluginVersion.split('.').map { it.toInt() }
+require(pluginVersionParts.size == 3 && pluginVersionParts.all { it in 0..999 })
+val pluginVersionCode = pluginVersionParts[0] * 1_000_000 + pluginVersionParts[1] * 1_000 + pluginVersionParts[2]
 val generatePluginAssets by tasks.registering(Exec::class) {
     inputs.file("plugin.json")
     inputs.dir("../../native-sdk/src")
@@ -35,8 +39,8 @@ android {
         applicationId = "dev.verncat.player.soulseek.plugin"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "1.0.4"
+        versionCode = pluginVersionCode
+        versionName = pluginVersion
         ndk { abiFilters += pluginAbis }
     }
     buildTypes {

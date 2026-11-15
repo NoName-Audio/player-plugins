@@ -121,6 +121,9 @@ jobs:
           actual=$("$tools/apksigner" verify --print-certs dist/player.soulseek.apk | awk '/Signer #1 certificate SHA-256 digest:/ {print $NF}')
           test "$actual" = "$EXPECTED_SHA256"
           "$tools/zipalign" -c -p 4 dist/player.soulseek.apk
+      - name: Verify APK version matches plugin manifests
+        run: |
+          python3 tools/verify-apk-version.py dist/player.soulseek.apk "$ANDROID_HOME/build-tools/36.0.0/aapt" soulseek/android/plugin.json soulseek/plugin.json
       - uses: actions/upload-artifact@v4
         with:
           name: native-android
