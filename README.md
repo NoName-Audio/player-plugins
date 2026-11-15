@@ -26,6 +26,8 @@ cargo test --workspace --locked
 cargo build -p player-hello-plugin
 ```
 
+CI runs workspace tests and builds on Linux, macOS, and Windows, plus the separately excluded Soulseek protocol crate tests. Native release packages are published by pushing a `native-v*` tag; the catalog is updated only after all release artifacts are successfully published.
+
 Package Hello on macOS arm64:
 
 ```sh

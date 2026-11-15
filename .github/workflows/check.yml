@@ -12,6 +12,8 @@ jobs:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace --locked
+      - name: Test Soulseek protocol implementation
+        run: cargo test --manifest-path soulseek/vendor/soulseek-rs-lib/Cargo.toml --locked
       - run: cargo build --workspace --locked
       - run: python3 -m unittest discover -s tools -p 'test_*.py'
         if: runner.os == 'Linux'
