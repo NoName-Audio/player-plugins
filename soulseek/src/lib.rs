@@ -328,9 +328,7 @@ impl Plugin {
             } else {
                 return Ok(Value::Null);
             };
-            let manifest: Value = serde_json::from_str(include_str!("../plugin.json")).map_err(|e| e.to_string())?;
             return Ok(json!({"type":"status","tone":tone,"label":label,"title":"Soulseek","children":[
-                {"type":"text","text":format!("By {}", text(&manifest["author"], "name"))},
                 {"type":"results","items":items}
             ]}));
         }
@@ -683,7 +681,7 @@ mod tests {
     use super::*;
     use player_plugin_sdk::testing::TestHost;
     #[test]
-    fn status_menu_exposes_transfer_actions_and_manifest_author() {
+    fn status_menu_exposes_transfer_actions() {
         let h = host();
         let mut p = Plugin::default();
         let r = result(0);
@@ -691,17 +689,15 @@ mod tests {
         p.results.insert(id.clone(), r.clone());
         p.action(json!({"action":"play","payload":{"resourceId":id}}), &h).unwrap();
         let menu = p.render(json!({"viewId":"buffer"}), &h).unwrap();
-        let row = &menu["children"][1]["items"][0];
-        let manifest: Value = serde_json::from_str(include_str!("../plugin.json")).unwrap();
+        let row = &menu["children"][0]["items"][0];
         assert_eq!(menu["title"], "Soulseek");
-        assert_eq!(menu["children"][0]["text"], format!("By {}", text(&manifest["author"], "name")));
         assert_eq!(row["title"], r["basename"]);
         assert_eq!(row["status"], "Starting download · 0 KiB");
         assert_eq!(row["actions"][0]["label"], "Cancel preview");
         assert_eq!(row["actions"][1]["label"], "Save to library");
         p.action(json!({"action":row["actions"][1]["id"],"payload":{"resourceId":row["id"]}}), &h).unwrap();
         let menu = p.render(json!({"viewId":"buffer"}), &h).unwrap();
-        let row = &menu["children"][1]["items"][0];
+        let row = &menu["children"][0]["items"][0];
         assert_eq!(row["actions"][1]["label"], "Cancel save");
         p.action(json!({"action":row["actions"][1]["id"],"payload":{"resourceId":row["id"]}}), &h).unwrap();
         assert!(p.pending_play.contains(&id));
@@ -722,9 +718,9 @@ mod tests {
         let menu = p.render(json!({"viewId":"buffer"}), &h).unwrap();
         assert_eq!(menu["tone"], "success");
         assert_eq!(menu["label"], "Soulseek · Download complete");
-        assert_eq!(menu["children"][1]["items"], json!([p.row(&r)]));
-        assert_eq!(menu["children"][1]["items"][0]["status"], "Download complete · 9766 KiB");
-        assert_eq!(menu["children"][1]["items"][0]["actions"], json!([
+        assert_eq!(menu["children"][0]["items"], json!([p.row(&r)]));
+        assert_eq!(menu["children"][0]["items"][0]["status"], "Download complete · 9766 KiB");
+        assert_eq!(menu["children"][0]["items"][0]["actions"], json!([
             {"id":"play","label":"Stop preview"},
             {"id":"save","label":"Save to library","disabled":false}
         ]));
@@ -734,7 +730,7 @@ mod tests {
         let menu = p.render(json!({"viewId":"buffer"}), &h).unwrap();
         assert_eq!(menu["tone"], "active");
         assert_eq!(menu["label"], "Soulseek · 1 active transfer");
-        assert_eq!(menu["children"][1]["items"], json!([p.row(&r)]));
+        assert_eq!(menu["children"][0]["items"], json!([p.row(&r)]));
         assert_eq!(h.count("soulseek.preview"), 0);
     }
 

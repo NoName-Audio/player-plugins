@@ -37,8 +37,7 @@ save, and Cancel save preserves a pending preview. Cancelling the last request
 cancels the package-owned transfer. The player status uses the Soulseek icon for
 active transfers, errors and completed downloads. Its menu lists active transfer
 titles, progress and queue status, with Preview/Cancel preview and Save to library/
-Cancel save actions sharing the search results' transfer intentions. The menu credits
-the author declared in `plugin.json`.
+Cancel save actions sharing the search results' transfer intentions.
 
 Search results do not normally include artwork. For each visible result folder,
 the package requests that exact directory listing from the same peer (not a
