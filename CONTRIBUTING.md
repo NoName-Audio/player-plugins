@@ -52,3 +52,44 @@ pull request updating the catalog's version, install link and update dates. Cata
 changes do not automatically update packages already installed by users.
 
 See [catalog format](docs/catalog.md) and [native plugin development](docs/development.md).
+
+## Request or add a new hook
+
+Plugins can use only the hooks and attachment targets explicitly exposed by Player.
+Adding a target name to `plugin.json` does not create a hook: an unknown attachment
+target renders nothing. See the [available targets](docs/attachment-targets.md) and
+the [attachment contract](docs/sdk.md#component-attachments-optional-api-2-extension)
+before proposing another one.
+
+If the hook you need is missing, open an issue or pull request in
+[NoName-Audio/player](https://github.com/NoName-Audio/player), not just a catalog PR
+here. Describe the plugin use case, where the hook should run, the context data it
+needs, and the expected behavior when the plugin is disabled or returns no UI.
+Never expose secrets, component instances, or unrestricted host access as context.
+
+For a new before/after component attachment target:
+
+1. In Player, follow `src/plugins/AlbumCard.ts`: register the component with
+   `withPluginAttachments`, choose a stable, case-sensitive public target name,
+   and project only the serializable context needed by plugins. Use the wrapped
+   component at the intended application call sites; registration alone is not enough.
+2. Check the surrounding layout: attachments render as siblings, not inside an
+   extra wrapper. Component refs, multi-root components, transitions, KeepAlive,
+   and Teleport require explicit handling; do not assume the wrapper is transparent.
+3. Verify the target with an actual native plugin: before/after placement, context
+   updates, actions, `null` output, disable/unmount, and rejection of stale results.
+   Keep existing permission and lifecycle checks intact.
+4. Run `pnpm attachments:docs` from the Player repository to regenerate the target
+   reference. Include the generated documentation in the review; do not edit its
+   target list by hand. Player release automation proposes the published reference
+   update to this repository through a separate pull request.
+5. Update the plugin to declare the target and handle `renderAttachment`. Link the
+   Player PR and state which Player release is required. Existing strict API 2 hosts
+   may reject manifests containing `attachments`; API 2 alone is not a compatibility
+   guarantee. Publish the dependent plugin only when the required host is available.
+
+For a new lifecycle callback, event, or host capability rather than a UI attachment,
+propose the request/response contract, permissions, and compatibility behavior in
+the Player PR first. Coordinate the host implementation with SDK changes and the
+desktop and Android runtimes, update the relevant documentation and examples,
+and test the supported platforms. A plugin-only change cannot add a host API.
