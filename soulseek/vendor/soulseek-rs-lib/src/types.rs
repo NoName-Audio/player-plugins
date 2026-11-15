@@ -164,7 +164,7 @@ impl Download {
         matches!(
             self.status,
             DownloadStatus::Completed
-                | DownloadStatus::Failed
+                | DownloadStatus::Failed { .. }
                 | DownloadStatus::TimedOut
                 | DownloadStatus::Cancelled
         )
@@ -193,6 +193,8 @@ impl Download {
 
 #[derive(Debug, Clone)]
 pub enum DownloadStatus {
+    /// Non-state-changing, privacy-safe file socket telemetry.
+    Protocol { phase: &'static str, bytes: u64, total: u64 },
     /// Waiting for a local concurrency slot; `QueueUpload` not yet sent to peer.
     QueuedLocally,
     /// `QueueUpload` sent; peer acknowledged and we are in their upload queue.
@@ -206,7 +208,8 @@ pub enum DownloadStatus {
         speed_bytes_per_sec: f64,
     },
     Completed,
-    Failed,
+    /// Stable privacy-safe classification, never a peer response or an error message.
+    Failed { category: &'static str },
     TimedOut,
     Cancelled,
 }

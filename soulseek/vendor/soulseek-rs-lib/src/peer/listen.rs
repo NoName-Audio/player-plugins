@@ -12,17 +12,19 @@ use crate::message::{Message, MessageReader};
 use crate::peer::download_peer::spawn_direct_download;
 use crate::peer::{ConnectionType, Peer};
 use crate::token::PeerTransferToken;
-use crate::{debug, error, info, trace};
+use crate::{debug, error, info};
 
 const PEER_INIT_MESSAGE_CODE: u8 = 1;
 const PIERCE_FIREWALL_MESSAGE_CODE: u8 = 0;
 const PEER_INIT_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_INBOUND_CONNECTIONS: usize = 64;
 
 #[derive(Clone)]
 struct ConnectionContext {
     client_sender: UnboundedSender<ClientOperation>,
     client_context: Arc<ClientContext>,
     own_username: String,
+    inbound_slots: Arc<tokio::sync::Semaphore>,
 }
 
 struct PeerInitData {
@@ -35,21 +37,20 @@ async fn read_peer_init_message(
     stream: &mut TcpStream,
     reader: &mut MessageReader,
 ) -> io::Result<Message> {
-    let mut temp_buffer = [0u8; 1024];
-    loop {
-        let n = stream.read(&mut temp_buffer).await?;
-        if n == 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "Connection closed while reading peer init",
-            ));
-        }
-        reader.push_bytes(&temp_buffer[..n]);
-
-        if let Ok(Some(msg)) = reader.extract_message() {
-            return Ok(msg);
-        }
+    // Read exactly one framed init. Reading an arbitrary chunk steals raw file
+    // token/data bytes from the socket and makes behavior depend on TCP packets.
+    let mut length = [0u8; 4];
+    stream.read_exact(&mut length).await?;
+    let size = u32::from_le_bytes(length) as usize;
+    if !(1..=64 * 1024).contains(&size) {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid peer init size"));
     }
+    let mut body = vec![0; size];
+    stream.read_exact(&mut body).await?;
+    reader.push_bytes(&length);
+    reader.push_bytes(&body);
+    reader.extract_message().map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid peer init"))?
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "incomplete peer init"))
 }
 
 fn parse_pierce_firewall_token(message: &mut Message) -> Option<PeerTransferToken> {
@@ -78,16 +79,6 @@ fn parse_peer_init_message(mut message: Message) -> Option<PeerInitData> {
     })
 }
 
-fn parse_token_from_buffer(buffer: &[u8], username: &str) -> Option<PeerTransferToken> {
-    let token_bytes = buffer.get(0..4)?;
-    let token = u32::from_le_bytes(token_bytes.try_into().unwrap_or_else(|_| {
-        panic!(
-            "[listener:{}] slice with incorrect length, can't extract transfer_token",
-            username
-        )
-    }));
-    Some(PeerTransferToken(token))
-}
 
 fn handle_peer_connection(
     peer: Peer,
@@ -97,12 +88,16 @@ fn handle_peer_connection(
     _peer_ip: &str,
     _peer_port: u16,
 ) {
-    match context.client_context.peer_registry.register_peer(
+    let Ok(permit) = context.inbound_slots.clone().try_acquire_owned() else { return; };
+    match context.client_context.peer_registry.register_inbound_peer(
         peer.clone(),
         Some(stream),
         Some(reader),
+        permit,
     ) {
-        Ok(_) => (),
+        Ok(handle) => {
+            let _ = context.client_sender.send(ClientOperation::FolderPeerReady(peer.username, handle));
+        },
         Err(_e) => {
             error!(
                 "Failed to spawn peer actor for {:?}: {:?}",
@@ -146,6 +141,14 @@ async fn handle_incoming_connection(stream: TcpStream, context: ConnectionContex
             "[listener:{peer_ip}:{peer_port}] PierceFireWall token: {}",
             token
         );
+        let folder_peer = context.client_context.folder_peers.lock().unwrap().remove(&token.0);
+        if let Some(username) = folder_peer {
+            let peer = Peer::new(username.clone(), ConnectionType::P, peer_ip, peer_port.into(), None, 0, 0, 0);
+            if let Ok(handle) = context.client_context.peer_registry.register_transfer_peer(peer, Some(stream)) {
+                let _ = context.client_sender.send(ClientOperation::FolderPeerReady(username, handle));
+            }
+            return;
+        }
 
         // Query the worker for the download by token
         let (tx, rx) = oneshot::channel();
@@ -200,19 +203,14 @@ async fn handle_incoming_connection(stream: TcpStream, context: ConnectionContex
         }
 
         ConnectionType::F => {
-            // Pre-fetch the download token from the buffered data before spawn_blocking
-            let buffer = reader.get_buffer();
-            let Some(download_token) = parse_token_from_buffer(&buffer, &init_data.username) else {
-                error!(
-                    "[listener:{}:{}] No download token in buffer for F connection",
-                    peer_ip, peer_port
-                );
-                return;
-            };
-            trace!(
-                "[listener:{}] got transfer_token: {} from data chunk",
-                init_data.username, download_token
-            );
+            // The transfer token is raw data following the framed init and may
+            // arrive in a separate packet. Do not require it to be coalesced.
+            let mut token_bytes = [0u8; 4];
+            match tokio::time::timeout(PEER_INIT_TIMEOUT, stream.read_exact(&mut token_bytes)).await {
+                Ok(Ok(_)) => {},
+                _ => return,
+            }
+            let download_token = PeerTransferToken(u32::from_le_bytes(token_bytes));
 
             // Query the worker for the download
             let (tx, rx) = oneshot::channel();
@@ -271,14 +269,18 @@ impl Listen {
             client_sender,
             client_context,
             own_username,
+            inbound_slots: Arc::new(tokio::sync::Semaphore::new(MAX_INBOUND_CONNECTIONS)),
         };
 
+        let handshakes = Arc::new(tokio::sync::Semaphore::new(16));
         loop {
             match listener.accept().await {
                 Ok((stream, _addr)) => {
+                    let Ok(handshake) = handshakes.clone().try_acquire_owned() else { continue; };
                     let context = context.clone();
                     tokio::spawn(async move {
                         handle_incoming_connection(stream, context).await;
+                        drop(handshake);
                     });
                 }
                 Err(_e) => {
@@ -286,5 +288,45 @@ impl Listen {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::AsyncWriteExt;
+    #[tokio::test]
+    async fn init_reader_leaves_file_token_on_socket() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut sender = TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
+        let (mut receiver, _) = listener.accept().await.unwrap();
+        let mut wire = crate::message::server::MessageFactory::build_peer_init_message("peer", ConnectionType::F, 0).get_buffer();
+        wire.extend_from_slice(&42u32.to_le_bytes());
+        wire.extend_from_slice(b"file");
+        sender.write_all(&wire).await.unwrap();
+        let mut reader = MessageReader::new();
+        let message = read_peer_init_message(&mut receiver, &mut reader).await.unwrap();
+        assert_eq!(parse_peer_init_message(message).unwrap().username, "peer");
+        let mut raw = [0; 8]; receiver.read_exact(&mut raw).await.unwrap();
+        assert_eq!(&raw[..4], &42u32.to_le_bytes());
+        assert_eq!(&raw[4..], b"file");
+    }
+
+    #[tokio::test]
+    async fn file_token_can_follow_init_in_separate_writes() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let mut sender = TcpStream::connect(listener.local_addr().unwrap()).await.unwrap();
+        let (mut receiver, _) = listener.accept().await.unwrap();
+        let init = crate::message::server::MessageFactory::build_peer_init_message("peer", ConnectionType::F, 0).get_buffer();
+        sender.write_all(&init).await.unwrap();
+        let mut reader = MessageReader::new();
+        read_peer_init_message(&mut receiver, &mut reader).await.unwrap();
+        let task = tokio::spawn(async move {
+            let mut token = [0; 4]; receiver.read_exact(&mut token).await.unwrap(); token
+        });
+        sender.write_all(&[42, 0]).await.unwrap();
+        tokio::task::yield_now().await;
+        sender.write_all(&[0, 0]).await.unwrap();
+        assert_eq!(task.await.unwrap(), 42u32.to_le_bytes());
     }
 }

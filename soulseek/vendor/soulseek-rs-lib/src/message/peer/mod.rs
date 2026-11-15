@@ -1,4 +1,5 @@
 mod file_search_response;
+pub mod folder_contents;
 mod get_share_file_list;
 mod peer_init;
 mod place_in_queue_response;

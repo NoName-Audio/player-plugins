@@ -77,8 +77,8 @@ Each needs `id`, `kind`, `label`; optional fields are `description`, `icon`, `or
 Local IDs use `[a-z0-9-]`, up to 64 characters. `player-widget` requires slot
 `player.actions` or `player.status`. Only `page` supports `showInMenu: false`.
 
-Native `render` returns a tree of `group`, `text`, `input`, `button`, `toggle`, or
-`results` nodes. Their fields are the same data contract across library and APK plugins:
+Native `render` returns a tree of `group`, `text`, `input`, `button`, `toggle`,
+`status`, or `results` nodes. Their fields are the same data contract across library and APK plugins:
 
 | Node | Main fields |
 | --- | --- |
@@ -88,12 +88,25 @@ Native `render` returns a tree of `group`, `text`, `input`, `button`, `toggle`, 
 | `button` | `label`, `action`, `payload?`, `disabled?` |
 | `toggle` | `label`, `value`, `action`, `payload?`, `disabled?` |
 | `results` | `items` |
+| `status` | Nonempty `label` (accessible name and tooltip), `tone` (`active` / `error` / `success`) |
 
 Forms submit keyed values in `fields`. Player applies its theme, shared controls,
 and pending-button animation. UI data does not contain HTML, CSS, or executable code.
 Limits: 12 levels, 100 children per node, 1000 result rows. Search rows are
 `{id, title, subtitle?, coverHash?, status?, actions?}`. Their actions receive
 `payload.resourceId`; track-menu actions receive `payload.track`.
+
+Status nodes display the owning plugin's manifest image (19px), never visible
+label text or a plugin-selected identity. Optional `title` and recursive `children`
+turn the centered icon into a button opening a responsive popup. Supply transfer
+details, author information and ordinary action nodes in those children; actions
+retain their normal payload, pending and disabled semantics. Polling updates preserve
+the open popup; changing the owning attachment generation resets it. Escape,
+outside click and Close dismiss the popup and restore trigger focus. Active icons
+pulse opacity (not popup content); reduced-motion disables the pulse. Errors are
+red and success green. Return `null` for idle/no icon.
+The frontend validates UI trees for both library and APK plugins; Rust transports
+their JSON results without a separate UI-node schema.
 
 ### Component attachments (optional API 2 extension)
 

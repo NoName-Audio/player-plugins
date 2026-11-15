@@ -31,6 +31,38 @@ pub struct ClientInner {
     /// Downloads queued before connect() is ever called; seeded into the worker on first connect.
     pub pending_downloads: VecDeque<Download>,
 }
+impl ClientInner {
+    pub fn begin_connection(&mut self) {
+        self.state = ClientState::Connecting;
+        if let Some(previous) = self.active.take() {
+            previous.actor_system.shutdown();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replacing_session_cancels_previous_actors_without_network() {
+        let actors = Arc::new(ActorSystem::default());
+        let cancellation = actors.cancellation_token().clone();
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        let (op_tx, _op_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut inner = ClientInner {
+            state: ClientState::Disconnected,
+            active: Some(ActiveConnection {
+                server_handle: ActorHandle { sender }, op_tx, actor_system: actors,
+            }),
+            pending_downloads: VecDeque::new(),
+        };
+        inner.begin_connection();
+        assert!(cancellation.is_cancelled());
+        assert!(inner.active.is_none());
+        assert!(matches!(inner.state, ClientState::Connecting));
+    }
+}
 
 impl Drop for ClientInner {
     fn drop(&mut self) {

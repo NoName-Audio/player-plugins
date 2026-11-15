@@ -19,6 +19,8 @@ pub struct PeerRegistry {
     own_username: String,
     shared_folders: u32,
     shared_files: u32,
+    connection_slots: Arc<tokio::sync::Semaphore>,
+    transfer_slots: Arc<tokio::sync::Semaphore>,
 }
 
 impl PeerRegistry {
@@ -36,7 +38,21 @@ impl PeerRegistry {
             own_username,
             shared_folders,
             shared_files,
+            connection_slots: Arc::new(tokio::sync::Semaphore::new(64)),
+            transfer_slots: Arc::new(tokio::sync::Semaphore::new(8)),
         }
+    }
+
+    pub fn register_inbound_peer(
+        &self, peer: Peer, stream: Option<TcpStream>, reader: Option<MessageReader>,
+        permit: tokio::sync::OwnedSemaphorePermit,
+    ) -> Result<ActorHandle<PeerCommand>, String> {
+        self.register_peer_with_permit(peer, stream, reader, Some(permit))
+    }
+    pub fn register_transfer_peer(&self, peer: Peer, stream: Option<TcpStream>) -> Result<ActorHandle<PeerCommand>, String> {
+        let permit = self.transfer_slots.clone().try_acquire_owned()
+            .map_err(|_| "Transfer control capacity reached".to_string())?;
+        self.register_peer_with_permit(peer, stream, None, Some(permit))
     }
 
     pub fn register_peer(
@@ -45,9 +61,20 @@ impl PeerRegistry {
         stream: Option<TcpStream>,
         reader: Option<MessageReader>,
     ) -> Result<ActorHandle<PeerCommand>, String> {
+        self.register_peer_with_permit(peer, stream, reader, None)
+    }
+
+    fn register_peer_with_permit(
+        &self, peer: Peer, stream: Option<TcpStream>, reader: Option<MessageReader>,
+        permit: Option<tokio::sync::OwnedSemaphorePermit>,
+    ) -> Result<ActorHandle<PeerCommand>, String> {
+        let global_permit = if permit.is_some() { None } else {
+            Some(self.connection_slots.clone().try_acquire_owned()
+                .map_err(|_| "Peer connection capacity reached".to_string())?)
+        };
         let username = peer.username.clone();
 
-        let actor = PeerActor::new(
+        let mut actor = PeerActor::new(
             peer,
             stream,
             reader,
@@ -56,6 +83,8 @@ impl PeerRegistry {
             self.shared_folders,
             self.shared_files,
         );
+        actor.set_inbound_permit(permit);
+        if let Some(permit) = global_permit { actor.set_connection_permit(permit); }
 
         let handle = self.actor_system.spawn(actor);
 
@@ -97,15 +126,42 @@ impl PeerRegistry {
     }
 
     pub fn send_to_peer(&self, username: &str, message: PeerCommand) -> Result<(), String> {
-        let handle = self
-            .get_peer(username)
+        // Keep lookup/send/removal under one lock so a replacement actor cannot
+        // be removed by a failed send to the old one.
+        let mut peers = self.peers.lock().unwrap();
+        let handle = peers.get(username)
             .ok_or_else(|| format!("Peer {} not found in registry", username))?;
-
-        handle.send(message)
+        match handle.send(message) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                peers.remove(username);
+                Err(error)
+            }
+        }
     }
 
     pub fn queue_upload(&self, username: &str, filename: SoulseekPath) -> Result<(), String> {
         self.send_to_peer(username, PeerCommand::QueueUpload(filename))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn closed_actor_is_removed_so_address_response_can_reconnect() {
+        let (client_channel, _) = tokio::sync::mpsc::unbounded_channel();
+        let registry = PeerRegistry::new(Arc::new(ActorSystem::default()), client_channel, "own".into(), 0, 0);
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        drop(receiver);
+        registry.peers.lock().unwrap().insert("peer".into(), ActorHandle { sender });
+        assert!(registry.contains("peer"));
+        assert!(registry.queue_upload("peer", SoulseekPath::from_wire("file".into())).is_err());
+        assert!(!registry.contains("peer"));
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        registry.peers.lock().unwrap().insert("peer".into(), ActorHandle { sender });
+        assert!(registry.queue_upload("peer", SoulseekPath::from_wire("file".into())).is_ok());
+        assert!(receiver.try_recv().is_ok());
     }
 }
 
@@ -118,6 +174,8 @@ impl Clone for PeerRegistry {
             own_username: self.own_username.clone(),
             shared_folders: self.shared_folders,
             shared_files: self.shared_files,
+            connection_slots: self.connection_slots.clone(),
+            transfer_slots: self.transfer_slots.clone(),
         }
     }
 }

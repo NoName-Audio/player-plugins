@@ -10,6 +10,10 @@ use crate::{
 };
 
 pub enum ClientOperation {
+    FolderContents { username: String, directory: String, token: u32, phase: std::sync::Arc<std::sync::atomic::AtomicU8>, reply: oneshot::Sender<crate::error::Result<Vec<crate::File>>> },
+    FolderPeerReady(String, crate::actor::ActorHandle<crate::actor::peer_actor::PeerCommand>),
+    CancelFolder(u32),
+    RetryFolder(String, crate::actor::peer_actor::PeerCommand),
     // ── Server lifecycle ─────────────────────────────────────────────────────
     /// Server TCP connection was lost; reconnect will be handled by ServerActor.
     ServerDisconnected,

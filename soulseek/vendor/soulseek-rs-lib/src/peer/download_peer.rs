@@ -47,7 +47,28 @@ impl From<DownloadError> for SoulseekRs {
         match e {
             DownloadError::Cancelled => SoulseekRs::DownloadCancelled,
             DownloadError::NoProgressTimeout => SoulseekRs::DownloadTimedOut,
-            other => SoulseekRs::InvalidMessage(other.to_string()),
+            other => {
+                let category = match &other {
+                    DownloadError::ConnectionFailed(e) => match e.kind() {
+                        io::ErrorKind::ConnectionRefused => "peer_connection_refused",
+                        io::ErrorKind::TimedOut => "peer_connect_timeout",
+                        _ => "peer_connect_failed",
+                    },
+                    DownloadError::HandshakeFailed(_) => "peer_handshake_failed",
+                    DownloadError::StreamReadError(e) => match e.kind() {
+                        io::ErrorKind::UnexpectedEof => "peer_truncated_transfer",
+                        io::ErrorKind::TimedOut => "peer_read_timeout",
+                        io::ErrorKind::ConnectionReset => "peer_connection_reset",
+                        _ => "peer_read_failed",
+                    },
+                    DownloadError::StreamWriteError(_) => "peer_write_failed",
+                    DownloadError::FileWriteError(_) => "local_file_write_failed",
+                    DownloadError::PathResolutionError(_) => "local_path_failed",
+                    DownloadError::InvalidAddress(_) => "peer_address_invalid",
+                    _ => "peer_transfer_protocol_failed",
+                };
+                SoulseekRs::DownloadFailure { category, source: Box::new(other) }
+            },
         }
     }
 }
@@ -84,8 +105,7 @@ pub fn spawn_direct_download(
                     DownloadError::Cancelled | DownloadError::NoProgressTimeout
                 ) {
                     error!(
-                        "Failed to download from {}:{} (token: {}): {}",
-                        host, port, token, e
+                        "soulseek_socket socket=F phase=failed error={}", e
                     );
                 }
                 SoulseekRs::from(e)
@@ -242,6 +262,10 @@ impl DownloadPeer {
             stream.is_some()
         );
 
+        let _ = download.sender.send(DownloadStatus::Protocol {
+            phase: if stream.is_some() { "file_inbound_token_received" } else { "file_outbound_connect" },
+            bytes: 0, total: download.size,
+        });
         let mut stream = match stream {
             Some(s) => {
                 s.set_nonblocking(false)
@@ -254,7 +278,28 @@ impl DownloadPeer {
                     .map_err(DownloadError::ConnectionFailed)?;
                 s
             }
-            None => self.establish_connection()?,
+            None => {
+                let mut stream = self.establish_connection()?;
+                // The uploader sends FileTransferInit on every F socket, even
+                // when the downloader established TCP. See Nicotine+'s
+                // slskproto.py _process_file_init_message/_process_file_output.
+                let init = MessageFactory::build_peer_init_message(
+                    &self.own_username,
+                    crate::peer::ConnectionType::F,
+                    0,
+                );
+                stream.write_all(&init.get_buffer()).map_err(DownloadError::HandshakeFailed)?;
+                crate::info!("soulseek_socket socket=F direction=outbound phase=peer_init_sent");
+                let _ = download.sender.send(DownloadStatus::Protocol { phase: "file_outbound_peer_init_sent", bytes: 0, total: download.size });
+                let mut transfer_token = [0; 4];
+                stream.read_exact(&mut transfer_token).map_err(DownloadError::HandshakeFailed)?;
+                if u32::from_le_bytes(transfer_token) != self.token {
+                    return Err(DownloadError::InvalidTokenBytes);
+                }
+                crate::info!("soulseek_socket socket=F direction=outbound phase=transfer_token_received bytes=4");
+                let _ = download.sender.send(DownloadStatus::Protocol { phase: "file_outbound_token_received", bytes: 4, total: download.size });
+                stream
+            },
         };
 
         let path = Self::resolve_download_path(&download)?;
@@ -263,6 +308,8 @@ impl DownloadPeer {
         stream
             .write_all(&START_DOWNLOAD)
             .map_err(DownloadError::StreamWriteError)?;
+        crate::info!("soulseek_socket socket=F phase=offset_sent bytes=8 expected_bytes={}", download.size);
+        let _ = download.sender.send(DownloadStatus::Protocol { phase: "file_offset_sent", bytes: 8, total: download.size });
 
         trace!("[download_peer:{}] sent START_DOWNLOAD", self.username);
 
@@ -327,15 +374,13 @@ impl DownloadPeer {
             self.username, self.token
         );
 
-        // Read the first chunk — first 4 bytes are the download token.
-        // On macOS an immediately readable socket can still transiently return WouldBlock
-        // during the pierced-handshake phase, so we retry until we have the token bytes.
-        let mut first_buf = [0u8; READ_BUFFER_SIZE];
+        // Consume only the raw transfer token; file bytes remain on the socket.
+        let mut first_buf = [0u8; 4];
         let mut first_read = 0usize;
         let mut last_data_time = Instant::now();
 
         while first_read < 4 {
-            match stream.read(&mut first_buf[first_read..]) {
+            match stream.read(&mut first_buf[first_read..4]) {
                 Ok(0) => {
                     return Err((
                         None,
@@ -367,9 +412,6 @@ impl DownloadPeer {
             }
         }
 
-        if first_read < 4 {
-            return Err((None, DownloadError::InvalidTokenBytes));
-        }
 
         let token = PeerTransferToken(u32::from_le_bytes(
             first_buf[..4]
@@ -385,35 +427,17 @@ impl DownloadPeer {
         // Token is now known — all subsequent errors carry Some(token).
         let download =
             resolve_download(token).ok_or((Some(token), DownloadError::TokenNotFound(token)))?;
+        let _ = download.sender.send(DownloadStatus::Protocol { phase: "file_reverse_pierce_token_received", bytes: 4, total: download.size });
 
         stream
             .write_all(&START_DOWNLOAD)
             .map_err(|e| (Some(token), DownloadError::StreamWriteError(e)))?;
+        let _ = download.sender.send(DownloadStatus::Protocol { phase: "file_offset_sent", bytes: 8, total: download.size });
 
         let path = Self::resolve_download_path(&download).map_err(|e| (Some(token), e))?;
         let mut writer = Self::open_output_file(&path).map_err(|e| (Some(token), e))?;
 
-        // Any bytes after the 4-byte token in the first chunk are the start of file data.
-        let mut total_bytes: usize = 0;
-        if first_read > 4 {
-            let initial_data = &first_buf[4..first_read];
-            writer
-                .write_all(initial_data)
-                .map_err(|e| (Some(token), DownloadError::FileWriteError(e)))?;
-            total_bytes += initial_data.len();
-
-            // Send progress if the initial chunk is already large enough.
-            if total_bytes >= PROGRESS_UPDATE_CHUNKS * READ_BUFFER_SIZE {
-                writer
-                    .flush()
-                    .map_err(|e| (Some(token), DownloadError::FileWriteError(e)))?;
-                let _ = download.sender.send(DownloadStatus::InProgress {
-                    bytes_downloaded: total_bytes as u64,
-                    total_bytes: download.size,
-                    speed_bytes_per_sec: 0.0,
-                });
-            }
-        }
+        let total_bytes = 0;
 
         let _final_bytes = Self::read_stream_with_offset(
             &self.username,
@@ -464,13 +488,22 @@ impl DownloadPeer {
         trace!("[download_peer:{}] reading stream data", _username);
 
         loop {
-            match stream.read(&mut read_buffer) {
+            if total_bytes as u64 == download.size {
+                break;
+            }
+            let remaining = (download.size - total_bytes as u64).min(READ_BUFFER_SIZE as u64) as usize;
+            match stream.read(&mut read_buffer[..remaining]) {
                 Ok(0) => {
                     trace!(
                         "[download_peer:{}] connection closed by peer, {} bytes read",
                         _username, total_bytes
                     );
-                    break;
+                    crate::info!("soulseek_socket socket=F phase=data_eof received_bytes={} expected_bytes={}", total_bytes, download.size);
+                    let _ = download.sender.send(DownloadStatus::Protocol { phase: "file_data_eof", bytes: total_bytes as u64, total: download.size });
+                    return Err(DownloadError::StreamReadError(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "peer closed before the advertised file size",
+                    )));
                 }
                 Ok(bytes_read) => {
                     writer
@@ -535,9 +568,15 @@ impl DownloadPeer {
                     }
                     // Peer is briefly slow; keep waiting.
                 }
-                Err(e) => return Err(DownloadError::StreamReadError(e)),
+                Err(e) => {
+                    crate::info!("soulseek_socket socket=F phase=data_read_failed kind={:?} received_bytes={} expected_bytes={}", e.kind(), total_bytes, download.size);
+                    let _ = download.sender.send(DownloadStatus::Protocol { phase: "file_data_read_failed", bytes: total_bytes as u64, total: download.size });
+                    return Err(DownloadError::StreamReadError(e));
+                }
             }
         }
+        crate::info!("soulseek_socket socket=F phase=data_complete received_bytes={} expected_bytes={}", total_bytes, download.size);
+        let _ = download.sender.send(DownloadStatus::Protocol { phase: "file_data_complete", bytes: total_bytes as u64, total: download.size });
 
         Ok(total_bytes - initial_bytes)
     }
@@ -545,6 +584,77 @@ impl DownloadPeer {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Read, Write};
+
+    #[test]
+    fn outbound_handshake_precedes_offset_and_truncated_files_fail() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let uploader = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(2))).unwrap();
+            // Independent wire fixture: uint32 frame length, uint8 PeerInit
+            // code, length-prefixed username/type, uint32 obsolete token.
+            let expected = b"\x11\0\0\0\x01\x03\0\0\0own\x01\0\0\0F\0\0\0\0";
+            let mut handshake = [0; 21];
+            stream.read_exact(&mut handshake).unwrap();
+            assert_eq!(&handshake, expected);
+            // FileTransferInit is uploader -> downloader, not TCP initiator
+            // -> acceptor. A real uploader waits for the offset after this.
+            stream.write_all(&42u32.to_le_bytes()).unwrap();
+            let mut offset = [0; 8]; stream.read_exact(&mut offset).unwrap();
+            assert_eq!(offset, [0; 8]);
+            stream.write_all(b"short").unwrap();
+        });
+        let directory = std::env::temp_dir().join(format!("soulseek-wire-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let (sender, _) = tokio::sync::mpsc::unbounded_channel();
+        let download = crate::types::Download {
+            username: "peer".into(), filename: crate::SoulseekPath::from_wire("test.bin".into()),
+            token: crate::token::DownloadToken(1), peer_token: Some(crate::token::PeerTransferToken(42)),
+            size: 20, download_directory: directory.to_string_lossy().into_owned(),
+            status: crate::types::DownloadStatus::QueuedLocally, sender,
+            cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            progress_timeout: None, queue_timeout_handle: None,
+        };
+        let mut exact_download = download.clone();
+        exact_download.size = 5;
+        let reverse_download = exact_download.clone();
+        let error = DownloadPeer::new("peer".into(), "127.0.0.1".into(), port.into(), 42, "own".into()).download_direct(download, None).unwrap_err();
+        uploader.join().unwrap();
+        assert!(matches!(&error, super::DownloadError::StreamReadError(e) if e.kind() == std::io::ErrorKind::UnexpectedEof));
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let mut uploader = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (stream, _) = listener.accept().unwrap();
+        let task = std::thread::spawn(move || {
+            let mut offset = [0; 8]; uploader.read_exact(&mut offset).unwrap();
+            uploader.write_all(b"audio").unwrap();
+        });
+        let (_, path) = DownloadPeer::new("peer".into(), String::new(), 0, 42, "own".into()).download_direct(exact_download, Some(stream)).unwrap();
+        task.join().unwrap();
+        assert_eq!(std::fs::read(path).unwrap(), b"audio");
+        // Reverse server rendezvous: PierceFireWall frame, uploader token,
+        // downloader offset, then literal file bytes (no filesize header).
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let uploader = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(std::time::Duration::from_secs(2))).unwrap();
+            let mut init = [0; 9];
+            stream.read_exact(&mut init).unwrap();
+            assert_eq!(init, [5, 0, 0, 0, 0, 99, 0, 0, 0]);
+            stream.write_all(&[42, 0, 0, 0]).unwrap();
+            let mut offset = [0; 8];
+            stream.read_exact(&mut offset).unwrap();
+            assert_eq!(offset, [0; 8]);
+            stream.write_all(b"audio").unwrap();
+        });
+        let (_, path) = DownloadPeer::new("peer".into(), "127.0.0.1".into(), port.into(), 99, "own".into())
+            .download_pierced(|token| (token.0 == 42).then(|| reverse_download.clone()), None).unwrap();
+        uploader.join().unwrap();
+        assert_eq!(std::fs::read(path).unwrap(), b"audio");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
     use super::DownloadPeer;
 
     #[test]

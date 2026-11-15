@@ -80,6 +80,17 @@ impl DownloadManager {
             Some(d) => (d.username.clone(), d.filename.clone()),
             None => return,
         };
+        // Bound both peer-address recovery and the upload response with the
+        // existing response deadline; reconnect attempts must not extend it.
+        if let Some(download) = self.downloads.get_mut(&token) {
+            if download.queue_timeout_handle.is_none() {
+                let op_tx = self.op_tx.clone();
+                download.queue_timeout_handle = Some(tokio::spawn(async move {
+                    tokio::time::sleep(QUEUE_RESPONSE_TIMEOUT).await;
+                    let _ = op_tx.send(ClientOperation::DownloadResponseTimeout(token));
+                }).abort_handle());
+            }
+        }
 
         if let Err(error) = self.context.peer_registry.queue_upload(&username, filename) {
             trace!(
@@ -100,15 +111,6 @@ impl DownloadManager {
             d.status = DownloadStatus::QueuedLocally;
         }
 
-        let op_tx = self.op_tx.clone();
-        let handle = tokio::spawn(async move {
-            tokio::time::sleep(QUEUE_RESPONSE_TIMEOUT).await;
-            let _ = op_tx.send(ClientOperation::DownloadResponseTimeout(token));
-        })
-        .abort_handle();
-        if let Some(d) = self.downloads.get_mut(&token) {
-            d.queue_timeout_handle = Some(handle);
-        }
     }
 
     /// Retry downloads that were never initiated because the peer actor had gone stale.
@@ -173,17 +175,14 @@ impl DownloadManager {
         token: DownloadToken,
         result: Result<String, crate::error::SoulseekRs>,
     ) {
-        let status = match result {
-            Ok(ref _path) => {
+        let status = match &result {
+            Ok(_path) => {
                 info!("Successfully downloaded to {}", _path);
                 DownloadStatus::Completed
             }
             Err(crate::error::SoulseekRs::DownloadCancelled) => DownloadStatus::Cancelled,
             Err(crate::error::SoulseekRs::DownloadTimedOut) => DownloadStatus::TimedOut,
-            Err(ref _e) => {
-                error!("Download failed: {}", _e);
-                DownloadStatus::Failed
-            }
+            Err(cause) => DownloadStatus::Failed { category: cause.failure_category() },
         };
         if let Some(download) = self.downloads.remove(&token) {
             let _ = download.sender.send(status);
@@ -192,23 +191,31 @@ impl DownloadManager {
         self.try_dequeue_next();
     }
 
-    /// Fail all downloads from a peer that has disconnected.
+    /// P sockets carry queue/control messages; F sockets own transfer lifetime.
+    /// Closing an idle P socket must not cancel an independent file socket or
+    /// erase the peer's remote upload queue. Existing queue deadlines still apply.
     pub fn on_peer_disconnected(&mut self, username: &str) {
-        self.fail_matching(username, None);
+        let waiting = self.downloads.values().filter(|d| d.username == username).count();
+        crate::info!("soulseek_socket socket=P phase=closed transfers_retained={}", waiting);
+        for download in self.downloads.values().filter(|d| d.username == username) {
+            let _ = download.sender.send(DownloadStatus::Protocol {
+                phase: "control_socket_closed_transfer_retained", bytes: 0, total: download.size,
+            });
+        }
     }
 
     /// Fail a specific download that the peer reported as permanently failed.
     pub fn on_upload_failed(&mut self, username: &str, filename: &SoulseekPath) {
-        self.fail_matching(username, Some(filename));
+        self.fail_matching(username, Some(filename), "peer_upload_failed");
     }
 
-    fn fail_matching(&mut self, username: &str, filename: Option<&SoulseekPath>) {
+    fn fail_matching(&mut self, username: &str, filename: Option<&SoulseekPath>, category: &'static str) {
         let failed_tokens: Vec<_> = self
             .downloads
             .values()
             .filter(|d| d.username == username && filename.is_none_or(|f| d.filename == *f))
             .map(|d| {
-                let _ = d.sender.send(DownloadStatus::Failed);
+                let _ = d.sender.send(DownloadStatus::Failed { category });
                 d.token
             })
             .collect();
@@ -357,5 +364,40 @@ impl DownloadManager {
 
     pub fn get_all(&self) -> Vec<Download> {
         self.downloads.values().cloned().collect()
+    }
+}
+
+#[cfg(test)]
+mod control_lifetime_tests {
+    use super::*;
+
+    #[test]
+    fn control_close_preserves_remote_queue_and_file_completion() {
+        let (operations, _) = tokio::sync::mpsc::unbounded_channel();
+        let (server, _) = tokio::sync::mpsc::unbounded_channel();
+        let registry = crate::peer::PeerRegistry::new(
+            Arc::new(crate::actor::ActorSystem::new()), operations.clone(), "own".into(), 0, 0,
+        );
+        let mut manager = DownloadManager::new(operations, ActorHandle { sender: server },
+            Arc::new(ClientContext::new(registry)), None, true, VecDeque::new(), HashMap::new());
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let token = DownloadToken(77);
+        manager.downloads.insert(token, Download {
+            username: "peer".into(), filename: SoulseekPath::from_wire("synthetic.wav".into()),
+            token, peer_token: Some(PeerTransferToken(42)), size: 5,
+            download_directory: String::new(), status: DownloadStatus::QueuedRemotely { place: None },
+            sender, cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            progress_timeout: None, queue_timeout_handle: None,
+        });
+        manager.active_slots.insert(token, DownloadSlot);
+        manager.on_peer_disconnected("peer");
+        assert!(manager.downloads.contains_key(&token));
+        assert!(manager.active_slots.contains_key(&token));
+        assert!(matches!(receiver.try_recv().unwrap(), DownloadStatus::Protocol {
+            phase: "control_socket_closed_transfer_retained", ..
+        }));
+        assert!(receiver.try_recv().is_err());
+        manager.on_completed(token, Ok("synthetic.wav".into()));
+        assert!(matches!(receiver.try_recv().unwrap(), DownloadStatus::Completed));
     }
 }

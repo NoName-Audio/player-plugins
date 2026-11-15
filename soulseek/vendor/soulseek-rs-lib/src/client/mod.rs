@@ -48,6 +48,30 @@ pub struct Client {
 }
 
 impl Client {
+    pub async fn folder_contents(&self, username: &str, directory: &str, timeout: Duration) -> Result<Vec<crate::File>> {
+        static SLOTS: std::sync::LazyLock<tokio::sync::Semaphore> = std::sync::LazyLock::new(|| tokio::sync::Semaphore::new(2));
+        let deadline = tokio::time::Instant::now() + timeout;
+        let _slot = tokio::time::timeout_at(deadline, SLOTS.acquire()).await
+            .map_err(|_| SoulseekRs::Timeout)?.map_err(|_| SoulseekRs::ConnectionClosed)?;
+        static TOKEN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+        let sender = self.inner.lock().unwrap_or_else(|e| e.into_inner()).active.as_ref()
+            .ok_or(SoulseekRs::NotConnected)?.op_tx.clone();
+        let (reply, receiver) = oneshot::channel();
+        struct Cleanup(mpsc::UnboundedSender<ClientOperation>, u32);
+        impl Drop for Cleanup { fn drop(&mut self) { let _ = self.0.send(ClientOperation::CancelFolder(self.1)); } }
+        let token = TOKEN.fetch_add(1, Ordering::Relaxed);
+        let _cleanup = Cleanup(sender.clone(), token);
+        let phase = Arc::new(std::sync::atomic::AtomicU8::new(0));
+        sender.send(ClientOperation::FolderContents { username: username.into(), directory: directory.into(),
+            token, phase: phase.clone(), reply }).map_err(|_| SoulseekRs::NotConnected)?;
+        tokio::time::timeout_at(deadline, receiver).await.map_err(|_| SoulseekRs::InvalidMessage(match phase.load(Ordering::Relaxed) {
+            0 => "folder_timeout_worker_pending", 1 => "folder_timeout_rendezvous_requested",
+            2 => "folder_timeout_peer_connected", 3 => "folder_timeout_request_sent",
+            _ => "folder_timeout_indirect_requested",
+        }.into()))?
+            .map_err(|_| SoulseekRs::ConnectionClosed)?
+    }
+
     async fn wait_for_search_rate_limit(&self) -> Result<()> {
         if let Some(wait) = self
             .search_limiter
@@ -94,7 +118,7 @@ impl Client {
             }
         }
 
-        self.inner.lock().unwrap_or_else(|e| e.into_inner()).state = ClientState::Connecting;
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).begin_connection();
 
         let username = self.settings.username.0.clone();
         let password = self.settings.password.0.clone();
@@ -156,6 +180,7 @@ impl Client {
         // Spawn ConnectedWorker — receives server_handle for sending commands.
         let worker = ConnectedWorker {
             own_username: username.clone(),
+            folder_requests: HashMap::new(),
             op_tx: op_tx.clone(),
             op_rx,
             inner: self.inner.clone(),

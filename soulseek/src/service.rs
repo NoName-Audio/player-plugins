@@ -15,7 +15,6 @@ const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "flac", "ogg", "opus", "aac", "m4a", "wav", "wv", "ape", "alac", "aiff",
 ];
 const COVER_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp"];
-const COVER_BASENAME_PRIORITY: &[&str] = &["cover", "folder", "front", "album", "art"];
 #[derive(Default)]
 pub struct Service {
     runtime: Option<tokio::runtime::Runtime>,
@@ -25,6 +24,7 @@ pub struct Service {
     previews: HashMap<String, (PathBuf, Arc<Mutex<String>>)>,
     jobs: HashMap<String, DownloadCanceller>,
     events: Arc<Mutex<BTreeMap<String, Value>>>,
+    pub diagnostics: Arc<Mutex<crate::diagnostics::Diagnostics>>,
 }
 fn resource_key(user: &str, file: &str) -> String {
     json!([user, file]).to_string()
@@ -48,6 +48,9 @@ fn validate_file(file: &str) -> Result<()> {
     Ok(())
 }
 impl Service {
+    pub fn log(&self, event: &'static str, resource: Option<&str>) {
+        self.diagnostics.lock().unwrap().record(event, resource, None, None, None);
+    }
     fn runtime(&mut self) -> Result<&tokio::runtime::Runtime> {
         if self.runtime.is_none() {
             self.runtime = Some(
@@ -63,6 +66,8 @@ impl Service {
     pub fn activate(&mut self, host: &dyn Host) -> Result<()> {
         let root = host.call("storage.staging", json!({}))?;
         self.root = PathBuf::from(root["path"].as_str().ok_or("Invalid staging directory")?);
+        *self.diagnostics.lock().unwrap() = crate::diagnostics::Diagnostics::open(&self.root).map_err(|e| e.to_string())?;
+        self.log("activated", None);
         Ok(())
     }
     fn client(&mut self, host: &dyn Host) -> Result<Client> {
@@ -96,9 +101,10 @@ impl Service {
             self.client = Some(client);
         }
         let client = self.client.as_ref().unwrap().clone();
-        self.runtime()?
-            .block_on(client.connect())
-            .map_err(|e| e.to_string())?;
+        self.log("connection_attempt", None);
+        let connected = self.runtime()?.block_on(client.connect());
+        self.log(if connected.is_ok() { "connected" } else { "connection_failed" }, None);
+        connected.map_err(|e| e.to_string())?;
         Ok(client)
     }
     fn cancel_all(&mut self) {
@@ -108,6 +114,7 @@ impl Service {
     }
     pub fn close(&mut self) {
         self.cancel_all();
+        self.log("closed", None);
         self.client = None;
         self.config = None;
         if let Some(runtime) = self.runtime.take() {
@@ -150,6 +157,7 @@ impl Service {
                 let user = args["request"]["username"].as_str().unwrap_or("");
                 let file = args["request"]["filename"].as_str().unwrap_or("");
                 let id = resource_key(user, file);
+                self.log("cancel_requested", Some(&id));
                 Ok(json!(self
                     .jobs
                     .remove(&id)
@@ -170,25 +178,58 @@ impl Service {
     }
     pub fn cover(&mut self, args: Value, host: &dyn Host) -> Result {
         let request = &args["args"]["request"];
-        let user = request["username"]
-            .as_str()
-            .ok_or("Missing peer username")?;
-        let file = request["coverFilename"]
-            .as_str()
-            .ok_or("Missing cover filename")?;
-        let size = request["coverSize"].as_u64().ok_or("Missing cover size")?;
-        if size == 0 || size > 32 * 1024 * 1024 {
-            return Err("Invalid cover size".into());
-        }
-        self.start(
-            SoulseekDownloadRequest {
-                username: user.into(),
-                filename: file.into(),
-                size,
-            },
-            Some(args["id"].clone()),
-            host,
-        )
+        let user = request["username"].as_str().ok_or("Missing peer username")?.to_owned();
+        let filename = request["filename"].as_str().ok_or("Missing track filename")?;
+        validate_file(filename)?;
+        let directory = soulseek_parent(filename).ok_or("Track has no shared parent folder")?;
+        let client = self.client(host)?;
+        let events = self.events.clone();
+        let diagnostics = self.diagnostics.clone();
+        let id = args["id"].clone();
+        self.runtime()?.spawn(async move {
+            let files = client.folder_contents(&user, &directory, Duration::from_secs(20)).await;
+            let retryable = files.is_err();
+            let selected = match files {
+                Ok(files) => {
+                    diagnostics.lock().unwrap().record("artwork_folder_listed", id.as_str(), None, None, None);
+                    select_folder_cover(files, &user, &directory)
+                }
+                Err(error) => {
+                    let category = match &error {
+                        soulseek_rs::SoulseekRs::Timeout => "timeout",
+                        soulseek_rs::SoulseekRs::NotConnected => "not_connected",
+                        soulseek_rs::SoulseekRs::ConnectionClosed => "connection_closed",
+                        soulseek_rs::SoulseekRs::InvalidMessage(phase) if phase == "folder_timeout_worker_pending" => "folder_timeout_worker_pending",
+                        soulseek_rs::SoulseekRs::InvalidMessage(phase) if phase == "folder_timeout_rendezvous_requested" => "folder_timeout_rendezvous_requested",
+                        soulseek_rs::SoulseekRs::InvalidMessage(phase) if phase == "folder_timeout_peer_connected" => "folder_timeout_peer_connected",
+                        soulseek_rs::SoulseekRs::InvalidMessage(phase) if phase == "folder_timeout_request_sent" => "folder_timeout_request_sent",
+                        soulseek_rs::SoulseekRs::InvalidMessage(phase) if phase == "folder_timeout_indirect_requested" => "folder_timeout_indirect_requested",
+                        soulseek_rs::SoulseekRs::ParseError(_) | soulseek_rs::SoulseekRs::InvalidMessage(_) | soulseek_rs::SoulseekRs::CompressionError(_) => "invalid_folder_response",
+                        _ => "folder_network_error",
+                    };
+                    diagnostics.lock().unwrap().record_with_category("artwork_folder_failed", id.as_str(), None, None, None, Some(category));
+                    None
+                }
+            };
+            diagnostics.lock().unwrap().record(
+                if selected.is_some() { "artwork_folder_found" } else { "artwork_folder_unavailable" },
+                id.as_str(), None, None, None,
+            );
+            let event = match selected {
+                Some(file) => json!({"topic":"soulseek-cover-discovered","payload":{"id":id,"username":user,"filename":file.filename,"size":file.size}}),
+                None => json!({"topic":"soulseek-cover","payload":{"id":id,"result":null,"retryable":retryable}}),
+            };
+            events.lock().unwrap().insert(format!("folder:{id}"), event);
+        });
+        Ok(Value::Null)
+    }
+    pub fn discovered_cover(&mut self, payload: &Value, host: &dyn Host) -> Result {
+        let request = SoulseekDownloadRequest {
+            username: payload["username"].as_str().ok_or("Missing cover peer")?.into(),
+            filename: payload["filename"].as_str().ok_or("Missing cover path")?.into(),
+            size: payload["size"].as_u64().ok_or("Missing cover size")?,
+        };
+        self.start(request, Some(payload["id"].clone()), host)
     }
     fn start(
         &mut self,
@@ -202,6 +243,7 @@ impl Service {
         }
         let client = self.client(host)?;
         let id = resource_key(&request.username, &request.filename);
+        self.log(if cover.is_some() { "artwork_enqueue" } else { "enqueue" }, Some(&id));
         let directory = if cover.is_some() {
             self.root
                 .join("covers")
@@ -222,6 +264,7 @@ impl Service {
                 .metadata()
                 .is_ok_and(|m| m.is_file() && m.len() == request.size)
             {
+                self.log("artwork_cached", Some(&id));
                 self.events.lock().unwrap().insert(
                     format!("cover:{id}"),
                     json!({"topic":"soulseek-cover","payload":{"id":cover_id,"path":path}}),
@@ -250,24 +293,40 @@ impl Service {
                 .insert(id.clone(), (path.clone(), state.clone()));
         }
         let events = self.events.clone();
+        let diagnostics = self.diagnostics.clone();
         self.runtime()?.spawn(async move {
    let mut terminal=false;
+   let mut last_log = std::time::Instant::now() - Duration::from_secs(5);
+   let mut last_state = "";
+   let mut last_queue = Value::Null;
    while let Some(status)=handle.recv().await{
     let mut event=json!({"username":request.username,"filename":request.filename,"basename":basename(&request.filename),"localPath":path,"totalBytes":request.size});
+    let mut failure_category = None;
+    if let DownloadStatus::Protocol { phase, bytes, total } = &status {
+     diagnostics.lock().unwrap().record(phase,Some(&id),Some(*bytes),Some(*total),None);
+     continue;
+    }
     let state_name=match status {
+     DownloadStatus::Protocol { .. } => unreachable!("handled above"),
      DownloadStatus::QueuedLocally=>"queued_local",
      DownloadStatus::QueuedRemotely{place}=>{event["queuePosition"]=json!(place);"queued_remote"},
      DownloadStatus::InProgress{bytes_downloaded,total_bytes,speed_bytes_per_sec}=>{event["bytesDownloaded"]=json!(bytes_downloaded);event["totalBytes"]=json!(total_bytes);event["speedBytesPerSec"]=json!(speed_bytes_per_sec);"progress"},
-     DownloadStatus::Completed=>{terminal=true;"completed"},DownloadStatus::Failed=>{terminal=true;event["error"]=json!("Download failed");"failed"},
-     DownloadStatus::TimedOut=>{terminal=true;event["error"]=json!("Download timed out");"timed_out"},DownloadStatus::Cancelled=>{terminal=true;"cancelled"},
+     DownloadStatus::Completed=>{terminal=true;"completed"},DownloadStatus::Failed{category}=>{terminal=true;failure_category=Some(category);event["error"]=json!("Download failed");"failed"},
+     DownloadStatus::TimedOut=>{terminal=true;failure_category=Some("no_progress_timeout");event["error"]=json!("Download timed out");"timed_out"},DownloadStatus::Cancelled=>{terminal=true;"cancelled"},
     };
+    if let Some(category) = failure_category { event["failureCategory"] = json!(category); }
     event["state"]=json!(state_name);*state.lock().unwrap()=if terminal{state_name}else{"active"}.into();
+    if state_name != last_state || event["queuePosition"] != last_queue || last_log.elapsed() >= Duration::from_secs(5) {
+     diagnostics.lock().unwrap().record_with_category(if cover.is_some() { match state_name { "completed" => "artwork_completed", "failed" => "artwork_failed", "timed_out" => "artwork_timed_out", "cancelled" => "artwork_cancelled", _ => "artwork_transfer" } } else { state_name },Some(&id),event["bytesDownloaded"].as_u64(),event["totalBytes"].as_u64(),event["queuePosition"].as_u64(),failure_category);
+     last_log=std::time::Instant::now();last_state=state_name;last_queue=event["queuePosition"].clone();
+    }
     if let Some(cover_id)=&cover {
-     if terminal{events.lock().unwrap().insert(format!("cover:{id}"),json!({"topic":"soulseek-cover","payload":{"id":cover_id,"path":if state_name=="completed"{Some(path.clone())}else{None},"result":null}}));}
+     if terminal{events.lock().unwrap().insert(format!("cover:{id}"),json!({"topic":"soulseek-cover","payload":{"id":cover_id,"path":if state_name=="completed"{Some(path.clone())}else{None},"result":null,"failureCategory":failure_category}}));}
     }else{events.lock().unwrap().insert(format!("transfer:{id}"),json!({"topic":"soulseek-preview","payload":event}));}
     if terminal{break;}
    }
-   if !terminal{*state.lock().unwrap()="failed".into();let value=if let Some(cover_id)=cover{json!({"topic":"soulseek-cover","payload":{"id":cover_id,"result":null}})}else{json!({"topic":"soulseek-preview","payload":{"username":request.username,"filename":request.filename,"localPath":path,"state":"failed","error":"Transfer ended unexpectedly"}})};events.lock().unwrap().insert(format!("ended:{id}"),value);}
+   if !terminal { diagnostics.lock().unwrap().record_with_category("transfer_stream_ended",Some(&id),None,None,None,Some("transfer_stream_ended")); }
+   if !terminal{*state.lock().unwrap()="failed".into();let value=if let Some(cover_id)=cover{json!({"topic":"soulseek-cover","payload":{"id":cover_id,"result":null,"failureCategory":"transfer_stream_ended"}})}else{json!({"topic":"soulseek-preview","payload":{"username":request.username,"filename":request.filename,"localPath":path,"state":"failed","error":"Transfer ended unexpectedly","failureCategory":"transfer_stream_ended"}})};events.lock().unwrap().insert(format!("ended:{id}"),value);}
   });
         Ok(Value::Null)
     }
@@ -315,8 +374,6 @@ pub struct SoulseekSearchResult {
     pub username: String,
     pub filename: String,
     pub basename: String,
-    pub cover_filename: Option<String>,
-    pub cover_size: Option<u64>,
     pub size: u64,
     pub bitrate: Option<u32>,
     pub duration: Option<u32>,
@@ -328,62 +385,34 @@ pub struct SoulseekSearchResult {
     pub extension: Option<String>,
 }
 
-struct PendingSearchFile {
-    result: SoulseekSearchResult,
-    parent: Option<String>,
-}
 
 struct PendingCoverFile {
     filename: String,
     size: u64,
-    priority: usize,
+}
+
+fn select_folder_cover(files: Vec<File>, user: &str, directory: &str) -> Option<PendingCoverFile> {
+    files.into_iter().filter_map(|file| {
+        let filename = file.name.to_string();
+        if file.username != user || soulseek_parent(&filename).as_deref() != Some(directory)
+            || file.size == 0 || file.size > 32 * 1024 * 1024 || validate_file(&filename).is_err() {
+            return None;
+        }
+        let name = basename(&filename);
+        let extension = Path::new(name).extension()?.to_str()?.to_ascii_lowercase();
+        if !COVER_EXTENSIONS.contains(&extension.as_str()) { return None; }
+        Some(PendingCoverFile { filename, size: file.size })
+    }).next()
 }
 
 fn flatten_search_results(results: Vec<soulseek_rs::SearchResult>) -> Vec<SoulseekSearchResult> {
-    let mut audio_files = Vec::new();
-    let mut covers: HashMap<(String, String), PendingCoverFile> = HashMap::new();
-
+    let mut files = Vec::new();
     for result in results {
-        let free_upload_slots = result.slots;
-        let peer_speed = result.speed;
         for file in result.files {
-            let mapped = map_search_file(file, free_upload_slots, peer_speed);
-            if let (Some(parent), Some(priority)) = (
-                mapped.parent.as_ref(),
-                cover_file_priority(&mapped.result.basename, mapped.result.extension.as_deref()),
-            ) {
-                let key = (mapped.result.username.clone(), parent.clone());
-                let candidate = PendingCoverFile {
-                    filename: mapped.result.filename.clone(),
-                    size: mapped.result.size,
-                    priority,
-                };
-                match covers.get(&key) {
-                    Some(current) if current.priority <= candidate.priority => {}
-                    _ => {
-                        covers.insert(key, candidate);
-                    }
-                }
-                continue;
-            }
-
-            if is_audio_result(&mapped.result) {
-                audio_files.push(mapped);
-            }
+            let mapped = map_search_file(file, result.slots, result.speed);
+            if is_audio_result(&mapped) { files.push(mapped); }
         }
     }
-
-    let mut files = Vec::with_capacity(audio_files.len());
-    for mut mapped in audio_files {
-        if let Some(parent) = mapped.parent.as_ref() {
-            if let Some(cover) = covers.get(&(mapped.result.username.clone(), parent.clone())) {
-                mapped.result.cover_filename = Some(cover.filename.clone());
-                mapped.result.cover_size = Some(cover.size);
-            }
-        }
-        files.push(mapped.result);
-    }
-
     files.sort_by(|left, right| {
         right
             .free_upload_slots
@@ -396,7 +425,7 @@ fn flatten_search_results(results: Vec<soulseek_rs::SearchResult>) -> Vec<Soulse
     files
 }
 
-fn map_search_file(file: File, free_upload_slots: u8, peer_speed: u32) -> PendingSearchFile {
+fn map_search_file(file: File, free_upload_slots: u8, peer_speed: u32) -> SoulseekSearchResult {
     let basename = file.name.filename().to_string();
     let filename = file.name.to_string();
     let extension = Path::new(&basename)
@@ -404,14 +433,10 @@ fn map_search_file(file: File, free_upload_slots: u8, peer_speed: u32) -> Pendin
         .and_then(|value| value.to_str())
         .map(|value| value.to_ascii_lowercase());
 
-    PendingSearchFile {
-        parent: soulseek_parent(&filename),
-        result: SoulseekSearchResult {
+    SoulseekSearchResult {
             username: file.username,
             filename,
             basename,
-            cover_filename: None,
-            cover_size: None,
             size: file.size,
             bitrate: file.attributes.bitrate,
             duration: file.attributes.duration,
@@ -421,7 +446,6 @@ fn map_search_file(file: File, free_upload_slots: u8, peer_speed: u32) -> Pendin
             peer_speed,
             free_upload_slots,
             extension,
-        },
     }
 }
 
@@ -436,23 +460,8 @@ fn is_audio_result(result: &SoulseekSearchResult) -> bool {
         || result.sample_rate.is_some()
 }
 
-fn cover_file_priority(basename: &str, extension: Option<&str>) -> Option<usize> {
-    let extension = extension?;
-    if !COVER_EXTENSIONS.contains(&extension) {
-        return None;
-    }
 
-    let stem = Path::new(basename)
-        .file_stem()
-        .and_then(|value| value.to_str())?
-        .to_ascii_lowercase();
-
-    COVER_BASENAME_PRIORITY
-        .iter()
-        .position(|candidate| *candidate == stem)
-}
-
-fn soulseek_parent(filename: &str) -> Option<String> {
+pub(crate) fn soulseek_parent(filename: &str) -> Option<String> {
     let mut segments: Vec<&str> = filename
         .split(['\\', '/'])
         .filter(|segment| !segment.is_empty())
@@ -461,13 +470,47 @@ fn soulseek_parent(filename: &str) -> Option<String> {
         return None;
     }
     segments.pop();
-    Some(segments.join("/"))
+    Some(segments.join("\\"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use player_plugin_sdk::testing::TestHost;
+    #[test]
+    fn track_search_does_not_need_to_advertise_folder_image() {
+        let found = flatten_search_results(vec![soulseek_rs::SearchResult {
+            token: soulseek_rs::token::SearchToken(1), username: "peer".into(), slots: 1, speed: 100,
+            files: vec![shared_file("peer", "Music\\Album\\song.mp3", 1000)],
+        }]);
+        assert_eq!(found.len(), 1);
+        assert_eq!(soulseek_parent(&found[0].filename).as_deref(), Some("Music\\Album"));
+        let image = select_folder_cover(vec![shared_file("peer", "Music\\Album\\COVER.PNG", 123)], "peer", "Music\\Album").unwrap();
+        assert_eq!(image.filename, "Music\\Album\\COVER.PNG");
+    }
+    fn shared_file(user: &str, name: &str, size: u64) -> File {
+        File { username: user.into(), name: soulseek_rs::SoulseekPath::from_wire(name.into()), size, attributes: Default::default() }
+    }
+    #[test]
+    fn folder_artwork_selection_is_peer_and_directory_scoped() {
+        let files = vec![
+            shared_file("other", "Music\\Album\\cover.jpg", 100),
+            shared_file("peer", "Music\\Album2\\cover.jpg", 100),
+            shared_file("peer", "Music\\Album\\disc\\cover.jpg", 100),
+            shared_file("peer", "Music\\Album\\cover.jpg", 0),
+            shared_file("peer", "Music\\Album\\cover.png", 33 * 1024 * 1024),
+            shared_file("peer", "Music\\Album\\song.mp3", 100),
+            shared_file("peer", "Music\\Album\\Artwork.webp", 100),
+            shared_file("peer", "Music\\Album\\FRONT.PNG", 100),
+            shared_file("peer", "Music\\Album\\Folder.JPEG", 100),
+        ];
+        let chosen = select_folder_cover(files, "peer", "Music\\Album").unwrap();
+        assert_eq!(chosen.filename, "Music\\Album\\Artwork.webp");
+        assert_eq!(chosen.size, 100);
+        let fallback = select_folder_cover(vec![shared_file("peer", "Music\\Album\\scan.WeBp", 123)], "peer", "Music\\Album").unwrap();
+        assert_eq!(fallback.filename, "Music\\Album\\scan.WeBp");
+        assert!(select_folder_cover(vec![shared_file("peer", "Music\\Album2\\cover.jpg", 100)], "peer", "Music\\Album").is_none());
+    }
     #[test]
     fn status_checks_presence_without_reading_password_or_connecting() {
         let h = TestHost::new(|method, _| {

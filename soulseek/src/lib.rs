@@ -1,3 +1,4 @@
+mod diagnostics;
 mod service;
 use player_plugin_sdk::{Host, NativePlugin, Result};
 use serde_json::{json, Value};
@@ -36,6 +37,10 @@ fn number(v: &Value, key: &str) -> f64 {
 fn key(v: &Value) -> String {
     json!([v["username"], v["filename"]]).to_string()
 }
+fn cover_key(r: &Value) -> Option<String> {
+    service::soulseek_parent(r["filename"].as_str()?)
+        .map(|directory| json!([r["username"], directory]).to_string())
+}
 fn failed(t: &Value) -> bool {
     matches!(
         t["state"].as_str(),
@@ -43,7 +48,11 @@ fn failed(t: &Value) -> bool {
     )
 }
 impl Plugin {
+    fn log(&self, event: &'static str, id: &str) {
+        if let Ok(service) = self.service.lock() { service.log(event, Some(id)); }
+    }
     fn resource(&self, r: &Value) -> Value {
+        let r = self.results.get(&key(r)).unwrap_or(r);
         json!({"pluginId":"player.soulseek","resourceId":key(r),"title":r["basename"],"artist":r["username"],"album":"","durationSeconds":r["duration"],"coverHash":r["coverHash"]})
     }
     fn persist(&mut self, host: &dyn Host) -> Result {
@@ -107,19 +116,30 @@ impl Plugin {
                 String::new()
             }
         );
-        let mut status = text(&t, "state");
+        let mut status = match t["state"].as_str().unwrap_or("") {
+            "starting" => "Starting download",
+            "queued_local" => "Waiting for connection",
+            "queued_remote" => "Waiting in peer's upload queue",
+            "progress" => "Downloading",
+            "completed" => "Download complete",
+            "cancelled" => "Cancelled",
+            "timed_out" => "Download timed out",
+            "failed" => "Download failed",
+            state => state,
+        }.to_owned();
         if let Some(bytes) = t["bytesDownloaded"].as_f64() {
             status += &format!(" · {} KiB", (bytes / 1024.).round());
         }
         if let Some(position) = t["queuePosition"].as_u64() {
-            status += &format!(" · queue {position}");
+            status += &format!(" · position {position}");
         }
         let playing = self.playback["playing"] == true
             && self.playback["resource"]["pluginId"] == "player.soulseek"
             && self.playback["resource"]["resourceId"] == id;
-        json!({"id":id,"title":r["basename"],"subtitle":subtitle,"coverHash":self.results.get(&id).map(|row|row["coverHash"].clone()).unwrap_or_else(||r["coverHash"].clone()),"status":status,"actions":[
+        let cover_loading = cover_key(r).is_some_and(|key| self.cover_pending.contains(&key));
+        json!({"id":id,"title":r["basename"],"subtitle":subtitle,"coverHash":self.results.get(&id).map(|row|row["coverHash"].clone()).unwrap_or_else(||r["coverHash"].clone()),"coverLoading":cover_loading,"status":status,"actions":[
             {"id":"play","label":if self.pending_play.contains(&id){"Cancel preview"}else if playing{"Stop preview"}else{"Preview"}},
-            {"id":"save","label":if self.busy.contains(&id){"Saving…"}else{"Save to library"},"disabled":self.busy.contains(&id)}]})
+            {"id":"save","label":if self.busy.contains(&id){"Saving…"}else if self.pending_save.contains_key(&id){"Cancel save"}else{"Save to library"},"disabled":self.busy.contains(&id)}]})
     }
     fn search(&mut self, query: &str, host: &dyn Host) -> Result<Vec<Value>> {
         if host.call("soulseek.status", json!({}))?["configured"] != true {
@@ -130,17 +150,18 @@ impl Plugin {
             .as_array()
             .cloned()
             .ok_or("Invalid Soulseek results")?;
-        for r in &result {
+        let mut result = result;
+        for r in &mut result {
+            if let Some(hash) = cover_key(r).and_then(|id| self.covers.get(&id)) {
+                r["coverHash"] = hash.clone();
+            }
             self.results.insert(key(r), r.clone());
         }
         Ok(result)
     }
     fn covers(&mut self, rows: &[Value], host: &dyn Host) {
         for r in rows {
-            if r["coverFilename"].is_null() || number(r, "coverSize") <= 0. {
-                continue;
-            }
-            let id = json!([r["username"], r["coverFilename"]]).to_string();
+            let Some(id) = cover_key(r) else { continue; };
             if !self.covers.contains_key(&id) && self.cover_pending.insert(id) {
                 self.cover_queue.push_back(r.clone());
             }
@@ -149,8 +170,8 @@ impl Plugin {
             let Some(r) = self.cover_queue.pop_front() else {
                 break;
             };
-            let id = json!([r["username"], r["coverFilename"]]).to_string();
-            let task=host.call("host.background",json!({"topic":"soulseek-cover","id":id,"method":"soulseek.cover","args":{"request":{"username":r["username"],"coverFilename":r["coverFilename"],"coverSize":r["coverSize"]}}}));
+            let id = cover_key(&r).expect("queued cover has a parent folder");
+            let task=host.call("host.background",json!({"topic":"soulseek-cover","id":id,"method":"soulseek.cover","args":{"request":{"username":r["username"],"filename":r["filename"]}}}));
             if task.is_ok() {
                 self.cover_workers += 1;
             } else {
@@ -187,16 +208,19 @@ impl Plugin {
     }
     fn play(&mut self, r: &Value, host: &dyn Host) -> Result {
         let token = self.prepare(r, host)?;
-        host.call(
+        let result = host.call(
             "host.play",
             json!({"sourceToken":token,"resource":self.resource(r)}),
-        )
+        );
+        self.log(if result.is_ok() { "preview_started" } else { "preview_failed" }, &key(r));
+        result
     }
     fn save(&mut self, r: &Value, track_id: Option<i64>, host: &dyn Host) -> Result {
         let id = key(r);
         if !self.busy.insert(id.clone()) {
             return Ok(Value::Null);
         }
+        self.log("import_started", &id);
         host.invalidate();
         let saved = (|| {
             let token = self.prepare(r, host)?;
@@ -206,7 +230,7 @@ impl Plugin {
                 } else {
                     "library.import"
                 },
-                json!({"sourceToken":token,"trackId":track_id,"coverHash":r["coverHash"]}),
+                json!({"sourceToken":token,"trackId":track_id,"coverHash":self.resource(r)["coverHash"]}),
             )?;
             if track.is_null() {
                 return Err("The downloaded file could not be indexed".into());
@@ -220,6 +244,7 @@ impl Plugin {
             .into();
             Ok(Value::Null)
         })();
+        self.log(if saved.is_ok() { "import_completed" } else { "import_failed" }, &id);
         self.busy.remove(&id);
         self.pending_save.remove(&id);
         let persisted = self.persist(host);
@@ -234,7 +259,7 @@ impl Plugin {
         self.tokens.remove(&id);
         self.transfers
             .insert(id.clone(), json!({"state":"starting","bytesDownloaded":0}));
-        match host.call("soulseek.preview",json!({"request":{"username":r["username"],"filename":r["filename"],"size":r["size"],"coverFilename":r["coverFilename"],"coverSize":r["coverSize"]}})) {
+        match host.call("soulseek.preview",json!({"request":{"username":r["username"],"filename":r["filename"],"size":r["size"]}})) {
             Ok(v)=>Ok(v),Err(e)=>{self.transfers.insert(id.clone(),json!({"state":"failed","error":e}));self.pending_play.remove(&id);self.pending_save.remove(&id);let _=self.persist(host);Err(e)}
         }
     }
@@ -252,6 +277,7 @@ impl Plugin {
             return self.persist(host);
         }
         if self.pending_play.contains(&id) && Self::ready(&r, &t) {
+            self.log("preview_ready", &id);
             self.pending_play.remove(&id);
             self.play(&r, host)?;
             self.persist(host)?;
@@ -282,19 +308,26 @@ impl Plugin {
             return Ok(json!({"type":"group","title":"Soulseek connection","children":children}));
         }
         if view == "buffer" {
-            let count = self
-                .transfers
-                .values()
-                .filter(|t| {
-                    matches!(
-                        t["state"].as_str(),
-                        Some("starting" | "queued_local" | "queued_remote" | "progress")
-                    )
-                })
-                .count();
-            return Ok(
-                json!({"type":"text","text":if count==0{String::new()}else{format!("Soulseek · {count} active transfer{}",if count==1{""}else{"s"})}}),
-            );
+            let items: Vec<_> = self.transfers.iter().filter_map(|(id, t)| {
+                matches!(t["state"].as_str(), Some("starting" | "queued_local" | "queued_remote" | "progress"))
+                    .then(|| self.results.get(id).map(|r| self.row(r))).flatten()
+            }).collect();
+            let count = items.len();
+            let (tone, label) = if count > 0 {
+                ("active", format!("Soulseek · {count} active transfer{}", if count == 1 { "" } else { "s" }))
+            } else if self.transfers.values().any(|t| matches!(t["state"].as_str(), Some("failed" | "timed_out"))) {
+                ("error", "Soulseek · Download failed".into())
+            } else if self.playback["resource"]["pluginId"] == "player.soulseek"
+                && self.transfers.get(&text(&self.playback["resource"], "resourceId")).is_some_and(|t| t["state"] == "completed") {
+                ("success", "Soulseek · Download complete".into())
+            } else {
+                return Ok(Value::Null);
+            };
+            let manifest: Value = serde_json::from_str(include_str!("../plugin.json")).map_err(|e| e.to_string())?;
+            return Ok(json!({"type":"status","tone":tone,"label":label,"title":"Soulseek","children":[
+                {"type":"text","text":format!("By {}", text(&manifest["author"], "name"))},
+                {"type":"results","items":items}
+            ]}));
         }
         let track = &args["context"]["track"];
         let rows: Vec<_> = self
@@ -408,6 +441,9 @@ impl Plugin {
                 return host.call("host.transport", json!({"action":"stop"}));
             }
             if self.pending_play.remove(&id) {
+                if self.pending_save.contains_key(&id) {
+                    return self.persist(host);
+                }
                 self.transfers
                     .insert(id.clone(), json!({"state":"cancelled"}));
                 self.tokens.remove(&id);
@@ -425,6 +461,15 @@ impl Plugin {
             self.persist(host)?;
             self.start(&r, host)
         } else if action == "save" || action == "replace" {
+            if self.pending_save.remove(&id).is_some() {
+                self.persist(host)?;
+                if !self.pending_play.contains(&id) && !self.busy.contains(&id) {
+                    self.transfers.insert(id.clone(), json!({"state":"cancelled"}));
+                    self.tokens.remove(&id);
+                    return host.call("soulseek.cancelPreview", json!({"request":{"username":r["username"],"filename":r["filename"]}}));
+                }
+                return Ok(Value::Null);
+            }
             let track_id = if action == "replace" {
                 Some(
                     args["context"]["track"]["id"]
@@ -498,9 +543,9 @@ impl Plugin {
                     let id = text(&payload, "id");
                     self.cover_pending.remove(&id);
                     let hash = payload["result"].clone();
-                    self.covers.insert(id.clone(), hash.clone());
+                    if payload["retryable"] != true { self.covers.insert(id.clone(), hash.clone()); }
                     for r in self.results.values_mut() {
-                        if json!([r["username"], r["coverFilename"]]).to_string() == id {
+                        if cover_key(r).as_deref() == Some(&id) {
                             r["coverHash"] = hash.clone();
                         }
                     }
@@ -585,11 +630,27 @@ impl NativePlugin for Plugin {
         if method == "poll" {
             let events = self.service.lock().map_err(|e| e.to_string())?.drain();
             for mut event in events {
+                if event["topic"] == "soulseek-cover-discovered" {
+                    let started = self.service.lock().map_err(|e| e.to_string())?
+                        .discovered_cover(&event["payload"], host);
+                    if started.is_err() {
+                        self.handle("event", json!({"topic":"soulseek-cover","payload":{"id":event["payload"]["id"],"result":null,"retryable":true}}), &services)?;
+                    }
+                    continue;
+                }
                 if event["topic"] == "soulseek-cover" {
                     if let Some(path) = event["payload"]["path"].as_str() {
                         event["payload"]["result"] = host
                             .call("media.cover", json!({"path":path}))
                             .unwrap_or(Value::Null);
+                        let outcome = if event["payload"]["result"].is_null() {
+                            "cover_media_unavailable"
+                        } else {
+                            "cover_media_ready"
+                        };
+                        self.service.lock().map_err(|e| e.to_string())?.log(
+                            outcome, event["payload"]["id"].as_str(),
+                        );
                     }
                 } else if let Some(path) = event["payload"]["localPath"].as_str() {
                     let state = event["payload"]["state"].as_str().unwrap_or("active");
@@ -616,6 +677,155 @@ player_plugin_sdk::export_plugin!(Plugin, "player.soulseek");
 mod tests {
     use super::*;
     use player_plugin_sdk::testing::TestHost;
+    #[test]
+    fn status_menu_exposes_transfer_actions_and_manifest_author() {
+        let h = host();
+        let mut p = Plugin::default();
+        let r = result(0);
+        let id = key(&r);
+        p.results.insert(id.clone(), r.clone());
+        p.action(json!({"action":"play","payload":{"resourceId":id}}), &h).unwrap();
+        let menu = p.render(json!({"viewId":"buffer"}), &h).unwrap();
+        let row = &menu["children"][1]["items"][0];
+        let manifest: Value = serde_json::from_str(include_str!("../plugin.json")).unwrap();
+        assert_eq!(menu["title"], "Soulseek");
+        assert_eq!(menu["children"][0]["text"], format!("By {}", text(&manifest["author"], "name")));
+        assert_eq!(row["title"], r["basename"]);
+        assert_eq!(row["status"], "Starting download · 0 KiB");
+        assert_eq!(row["actions"][0]["label"], "Cancel preview");
+        assert_eq!(row["actions"][1]["label"], "Save to library");
+        p.action(json!({"action":row["actions"][1]["id"],"payload":{"resourceId":row["id"]}}), &h).unwrap();
+        let menu = p.render(json!({"viewId":"buffer"}), &h).unwrap();
+        let row = &menu["children"][1]["items"][0];
+        assert_eq!(row["actions"][1]["label"], "Cancel save");
+        p.action(json!({"action":row["actions"][1]["id"],"payload":{"resourceId":row["id"]}}), &h).unwrap();
+        assert!(p.pending_play.contains(&id));
+        assert_eq!(h.count("soulseek.cancelPreview"), 0);
+        p.action(json!({"action":row["actions"][0]["id"],"payload":{"resourceId":row["id"]}}), &h).unwrap();
+        assert_eq!(h.count("soulseek.cancelPreview"), 1);
+        assert!(p.render(json!({"viewId":"buffer"}), &h).unwrap().is_null());
+    }
+    #[test]
+    fn completed_preview_status_follows_active_track_without_hiding_downloads() {
+        let h = host();
+        let mut p = Plugin::default();
+        let r = result(0);
+        let id = key(&r);
+        p.results.insert(id.clone(), r);
+        p.transfers.insert(id.clone(), json!({"state":"completed"}));
+        p.handle("playback", json!({"resource":{"pluginId":"player.soulseek","resourceId":id}}), &h).unwrap();
+        assert_eq!(p.render(json!({"viewId":"buffer"}), &h).unwrap()["tone"], "success");
+        p.handle("playback", json!({"resource":null}), &h).unwrap();
+        assert!(p.render(json!({"viewId":"buffer"}), &h).unwrap().is_null());
+        p.transfers.insert(id, json!({"state":"progress"}));
+        assert_eq!(p.render(json!({"viewId":"buffer"}), &h).unwrap()["tone"], "active");
+    }
+
+    #[test]
+    fn missing_search_images_discover_once_per_peer_folder_and_refresh_all_rows() {
+        let h = TestHost::new(|_, _| Ok(Value::Null));
+        let a = result(0);
+        let b = result(1);
+        let mut other = result(2);
+        other["username"] = json!("other");
+        let mut next = result(3);
+        next["filename"] = json!("next/song.mp3");
+        let mut p = Plugin::default();
+        for r in [&a, &b, &other, &next] { p.results.insert(key(r), r.clone()); }
+        p.covers(&[a.clone(), b.clone(), other.clone(), next.clone()], &h);
+        assert_eq!(h.count("host.background"), 2);
+        assert_eq!(p.cover_queue.len(), 1);
+        assert_eq!(p.cover_workers, 2);
+        assert_eq!(p.row(&a)["coverLoading"], true);
+        assert_eq!(p.row(&b)["coverLoading"], true);
+        assert!(h.calls.borrow().iter().any(|(method, args)| method == "host.background" && args["args"]["request"]["filename"] == a["filename"]));
+        p.handle("event", json!({"topic":"soulseek-cover","payload":{"id":cover_key(&a).unwrap(),"result":"real-hash"}}), &h).unwrap();
+        assert_eq!(p.row(&a)["coverHash"], "real-hash");
+        assert_eq!(p.row(&b)["coverHash"], "real-hash");
+        assert_eq!(p.row(&a)["coverLoading"], false);
+        assert_eq!(p.row(&b)["coverLoading"], false);
+        assert!(p.row(&other)["coverHash"].is_null());
+        assert_eq!(h.count("host.background"), 3);
+        p.covers(&[a, b], &h);
+        assert_eq!(h.count("host.background"), 3);
+    }
+    #[test]
+    fn transient_folder_error_retries_on_next_search_but_empty_folder_is_cached() {
+        let h = TestHost::new(|_, _| Ok(Value::Null));
+        let row = result(0);
+        let id = cover_key(&row).unwrap();
+        let mut p = Plugin::default();
+        p.covers(&[row.clone()], &h);
+        p.handle("event", json!({"topic":"soulseek-cover","payload":{"id":id,"result":null,"retryable":true}}), &h).unwrap();
+        assert_eq!(p.row(&row)["coverLoading"], false);
+        p.covers(&[row.clone()], &h);
+        assert_eq!(h.count("host.background"), 2);
+        p.handle("event", json!({"topic":"soulseek-cover","payload":{"id":id,"result":null}}), &h).unwrap();
+        assert_eq!(p.row(&row)["coverLoading"], false);
+        p.covers(&[row], &h);
+        assert_eq!(h.count("host.background"), 2);
+    }
+    #[test]
+    fn cached_covers_survive_search_refresh_and_reach_imports() {
+        let r = result(0);
+        let found = r.clone();
+        let h = TestHost::new(move |method, _| match method {
+            "soulseek.status" => Ok(json!({"configured":true})),
+            "soulseek.search" => Ok(json!([found.clone()])),
+            "soulseek.prepare" => Ok(json!("source-token")),
+            "library.import" => Ok(json!({"id":42})),
+            _ => Ok(Value::Null),
+        });
+        let mut p = Plugin::default();
+        let cover_id = cover_key(&r).unwrap();
+        p.search("Song", &h).unwrap();
+        p.handle("event", json!({"topic":"soulseek-cover","payload":{"id":cover_id,"result":"folder-hash"}}), &h).unwrap();
+        let refreshed = p.search("Song", &h).unwrap();
+        assert_eq!(refreshed[0]["coverHash"], "folder-hash");
+        assert_eq!(p.row(&r)["coverHash"], "folder-hash");
+        assert_eq!(p.resource(&r)["coverHash"], "folder-hash");
+        p.save(&r, None, &h).unwrap();
+        assert!(h.calls.borrow().iter().any(|(method, args)| method == "library.import" && args["coverHash"] == "folder-hash"));
+    }
+
+    #[test]
+    fn remote_queue_cancel_preview_preserves_save() {
+        let h = host();
+        let mut p = Plugin::default();
+        let r = result(0);
+        let id = key(&r);
+        p.results.insert(id.clone(), r.clone());
+        for action in ["play", "save"] {
+            p.action(json!({"action":action,"payload":{"resourceId":id}}), &h).unwrap();
+        }
+        p.transfer(json!({"username":"peer","filename":r["filename"],"state":"queued_remote","queuePosition":3,"localPath":"partial.mp3"}), &h).unwrap();
+        assert_eq!(h.count("host.play"), 0);
+        assert_eq!(p.row(&r)["status"], "Waiting in peer's upload queue · position 3");
+        assert_eq!(p.row(&r)["actions"][1]["label"], "Cancel save");
+        assert_eq!(p.render(json!({"viewId":"buffer"}), &h).unwrap()["tone"], "active");
+        p.action(json!({"action":"play","payload":{"resourceId":id}}), &h).unwrap();
+        assert_eq!(h.count("soulseek.cancelPreview"), 0);
+        assert!(p.pending_save.contains_key(&id));
+        p.transfer(json!({"username":"peer","filename":r["filename"],"state":"completed","localPath":"complete.mp3"}), &h).unwrap();
+        assert_eq!(h.count("library.import"), 1);
+        assert_eq!(h.count("host.play"), 0);
+        assert!(p.render(json!({"viewId":"buffer"}), &h).unwrap().is_null());
+    }
+    #[test]
+    fn cancelling_only_save_cancels_owned_transfer() {
+        let h = host();
+        let mut p = Plugin::default();
+        let r = result(0);
+        let id = key(&r);
+        p.results.insert(id.clone(), r);
+        for _ in 0..2 {
+            p.action(json!({"action":"save","payload":{"resourceId":id}}), &h).unwrap();
+        }
+        assert!(p.pending_save.is_empty());
+        assert_eq!(h.count("soulseek.preview"), 1);
+        assert_eq!(h.count("soulseek.cancelPreview"), 1);
+        assert!(p.render(json!({"viewId":"buffer"}), &h).unwrap().is_null());
+    }
     fn result(i: usize) -> Value {
         json!({"username":"peer","filename":format!("folder/song-{i}.mp3"),"basename":format!("Song {i}"),"size":10_000_000,"bitrate":128,"extension":"mp3","duration":240})
     }

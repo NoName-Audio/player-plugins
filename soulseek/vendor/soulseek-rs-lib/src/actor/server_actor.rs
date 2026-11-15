@@ -103,6 +103,7 @@ pub enum ServerCommand {
     },
     PierceFirewall(PierceToken),
     GetPeerAddress(String),
+    RequestPeer { username: String, token: u32 },
 }
 
 /// Internal signals produced by wire message handlers or actor self-sends.
@@ -312,6 +313,9 @@ impl ServerActor {
 
     fn handle_command(&mut self, cmd: ServerCommand) {
         match cmd {
+            ServerCommand::RequestPeer { username, token } => {
+                self.queue_message(crate::message::Message::new().write_int32(18).write_int32(token).write_string(&username).write_string("P").clone());
+            }
             ServerCommand::Login {
                 username,
                 password,

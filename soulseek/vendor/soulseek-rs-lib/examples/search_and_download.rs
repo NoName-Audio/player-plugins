@@ -83,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Downloading...");
     while let Some(status) = handle.recv().await {
         match status {
+            DownloadStatus::Protocol { phase, bytes, total } => println!("{phase}: {bytes}/{total}"),
             DownloadStatus::QueuedLocally => println!("Queued locally..."),
             DownloadStatus::QueuedRemotely { place } => {
                 println!("Queued remotely (place: {:?})...", place)
@@ -101,8 +102,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("\nDone!");
                 break;
             }
-            DownloadStatus::Failed => {
-                eprintln!("\nDownload failed.");
+            DownloadStatus::Failed { category } => {
+                eprintln!("\nDownload failed ({category}).");
                 break;
             }
             DownloadStatus::TimedOut => {
