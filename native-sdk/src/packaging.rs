@@ -3,6 +3,45 @@ use crate::{serde_json::Value, Result};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use std::path::Path;
 
+pub const MAX_LIBRARY_BYTES: u64 = 64 * 1024 * 1024;
+pub const MAX_RUNTIME_BYTES: u64 = 256 * 1024 * 1024;
+pub const MAX_TARGET_RUNTIME_BYTES: u64 = 384 * 1024 * 1024;
+pub const MAX_PACKAGE_BYTES: u64 = 768 * 1024 * 1024;
+
+pub fn validate_runtime_name(name: &str) -> Result<()> {
+    if name.is_empty() || name.len() > 128 || name.ends_with('.')
+        || !name.bytes().all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
+        || matches!(name, "." | "..") {
+        return Err("Invalid runtime filename".into());
+    }
+    let lower = name.to_ascii_lowercase();
+    let stem = lower.split('.').next().unwrap();
+    if matches!(lower.as_str(), "plugin.dll" | "plugin.so" | "plugin.dylib")
+        || matches!(stem, "con" | "prn" | "aux" | "nul")
+        || (stem.len() == 4 && (stem.starts_with("com") || stem.starts_with("lpt"))
+            && matches!(stem.as_bytes()[3], b'1'..=b'9')) {
+        return Err("Reserved runtime filename".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod runtime_tests {
+    use super::*;
+
+    #[test]
+    fn runtime_filenames_are_portable_and_flat() {
+        for name in ["deno", "yt-dlp.exe", "LICENSE-deno.txt", "_runtime-1.2"] {
+            assert!(validate_runtime_name(name).is_ok(), "{name}");
+        }
+        for name in ["", ".", "..", "../deno", "a/b", "a\\b", "deno.", "a b", "é", "CON", "con.txt", "COM1.exe", "Lpt9", "PLUGIN.dll", "plugin.so", "plugin.dylib"] {
+            assert!(validate_runtime_name(name).is_err(), "{name}");
+        }
+        assert!(validate_runtime_name(&"a".repeat(128)).is_ok());
+        assert!(validate_runtime_name(&"a".repeat(129)).is_err());
+    }
+}
+
 pub fn manifest(folder: &Path) -> Result<Value> {
     let mut manifest: Value = serde_json::from_slice(
         &std::fs::read(folder.join("plugin.json")).map_err(|e| e.to_string())?,

@@ -81,5 +81,47 @@ class PublishingTests(unittest.TestCase):
                 module.merge(root / 'input', root / 'dist', 'repo', 'tag')
 
 
+
+    def test_runtime_targets_publish_separately_without_dropping_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            for target in ('macos-aarch64', 'windows-x86_64'):
+                file = self.fixture(root / 'input', target)
+                package = json.loads(file.read_text())
+                data = b'private runtime'
+                package['native']['artifacts'][target]['files'] = {'deno': {
+                    'data': base64.b64encode(data).decode(),
+                    'sha256': hashlib.sha256(data).hexdigest(), 'executable': True}}
+                file.write_text(json.dumps(package))
+            catalog = module.merge(root / 'input', root / 'dist', 'repo', 'tag')
+            entry = catalog['plugins'][0]
+            self.assertNotIn('installUrl', entry)
+            self.assertEqual(set(entry['installUrls']), {'macos-aarch64', 'windows-x86_64'})
+            for target in entry['installUrls']:
+                packed = json.loads((root / 'dist' / f'player.soulseek-{target}.player-plugin').read_text())
+                self.assertEqual(list(packed['native']['artifacts']), [target])
+                self.assertTrue(packed['native']['artifacts'][target]['files']['deno']['executable'])
+
+    def test_runtime_hash_names_and_bounds_are_validated(self):
+        for name in ('../deno', 'DENO.', 'CON.txt', 'plugin.dll', '', 'é', 'a' * 129):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                module.validate_runtime_name(name)
+        data = b'valid'
+        payload = {'data': base64.b64encode(data).decode(), 'sha256': hashlib.sha256(data).hexdigest(), 'executable': True}
+        artifact = {**payload, 'files': {'deno': payload}}
+        module.verify_artifact('linux-x86_64', artifact)
+        with self.assertRaises(ValueError):
+            module.verify_artifact('linux-x86_64', {**artifact, 'files': {'deno': payload, 'DENO': payload}})
+        with self.assertRaises(ValueError):
+            module.verify_artifact('linux-x86_64', {**artifact, 'files': {'deno': {**payload, 'sha256': '0' * 64}}})
+        with self.assertRaises(ValueError):
+            module.verify_payload(payload, 2)
+        original = module.MAX_TARGET_RUNTIME_BYTES
+        try:
+            module.MAX_TARGET_RUNTIME_BYTES = len(data) - 1
+            with self.assertRaisesRegex(ValueError, '384 MiB'):
+                module.verify_artifact('linux-x86_64', artifact)
+        finally:
+            module.MAX_TARGET_RUNTIME_BYTES = original
 if __name__ == '__main__':
     unittest.main()

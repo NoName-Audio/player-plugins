@@ -114,10 +114,22 @@ also include the Rust target triple in their directory. Package one or more libr
 cargo run -p player-plugin-sdk --bin player-plugin-pack -- examples/hello /tmp/hello.player-plugin macos-aarch64=target/debug/libplayer_hello_plugin.dylib
 ```
 
-Additional `os-arch=library-path` arguments add other targets. The packer embeds
-base64 bytes and SHA-256 for each target. Maximums: 64 MiB per library, 96 MiB per
-package, and eight artifacts. Player checks the package/fingerprint before approval
-and loads only the matching target after the plugin is enabled.
+Additional `os-arch=library-path` arguments add other targets. Optional repeated
+`--runtime target:name=path` arguments attach private executable files to that
+target (for example `--runtime macos-aarch64:deno=./deno`). The target must also
+have a library. Each artifact retains `data` and `sha256`; optional `files` maps
+filenames to `{data, sha256, executable}` with base64 data and SHA-256 hashes.
+The packer sets `executable: true`; packages without runtimes omit `files`.
+Maximums: 64 MiB per library, 256 MiB per runtime file, 384 MiB of decoded runtime
+files per target, and 768 MiB for the complete JSON package. Runtime filenames
+are flat ASCII letters/digits/dot/underscore/dash, 1–128 bytes, with no trailing
+dot, `.` or `..`, case collisions, Windows device stems (`CON`, `PRN`, `AUX`,
+`NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`), or `plugin.dll`, `plugin.so`, `plugin.dylib`.
+Reserved names are case-insensitive, including device stems before extensions.
+Player verifies every file before approval and installs the matching target in
+an immutable fingerprint directory. Native `runtime.directory` returns `{path}`
+for that directory without an extra permission; runtimes need no PATH installation
+or configurable executable paths. Libraries are loaded only after enabling.
 
 Install the file through Settings → Plugins, review its native-code access, and enable.
 For URL installation, publish a built `.player-plugin`; a GitHub directory URL must
