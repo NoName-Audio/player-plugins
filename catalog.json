@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "updatedAt": "2026-11-15",
+  "updatedAt": "2026-11-17",
   "plugins": [
     {
       "id": "player.discord-rpc",
@@ -51,6 +51,30 @@
         "music"
       ],
       "androidApkUrl": "https://github.com/NoName-Audio/player-plugins/releases/download/native-v1.0.7/player.soulseek.apk"
+    },
+    {
+      "id": "player.youtube",
+      "name": "YouTube",
+      "description": "Search YouTube, preview audio and save tracks to your library.",
+      "repository": "https://github.com/NoName-Audio/player-plugin-youtube",
+      "version": "1.0.0",
+      "author": {
+        "name": "Player contributors",
+        "url": "https://github.com/NoName-Audio/player/graphs/contributors"
+      },
+      "image": "https://raw.githubusercontent.com/NoName-Audio/player-plugin-youtube/v1.0.0/assets/youtube.png",
+      "platforms": ["macos", "windows", "linux"],
+      "installUrls": {
+        "macos-aarch64": "https://github.com/NoName-Audio/player-plugin-youtube/releases/download/v1.0.0/player.youtube-macos-aarch64.player-plugin",
+        "macos-x86_64": "https://github.com/NoName-Audio/player-plugin-youtube/releases/download/v1.0.0/player.youtube-macos-x86_64.player-plugin",
+        "linux-aarch64": "https://github.com/NoName-Audio/player-plugin-youtube/releases/download/v1.0.0/player.youtube-linux-aarch64.player-plugin",
+        "linux-x86_64": "https://github.com/NoName-Audio/player-plugin-youtube/releases/download/v1.0.0/player.youtube-linux-x86_64.player-plugin",
+        "windows-aarch64": "https://github.com/NoName-Audio/player-plugin-youtube/releases/download/v1.0.0/player.youtube-windows-aarch64.player-plugin",
+        "windows-x86_64": "https://github.com/NoName-Audio/player-plugin-youtube/releases/download/v1.0.0/player.youtube-windows-x86_64.player-plugin"
+      },
+      "addedAt": "2026-11-17",
+      "updatedAt": "2026-11-17",
+      "tags": ["native", "music", "youtube"]
     }
   ]
 }
