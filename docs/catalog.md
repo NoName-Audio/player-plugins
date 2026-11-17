@@ -20,10 +20,13 @@ Official Discord and Soulseek entries are generated from successfully published
 native release assets. An empty catalog is valid before the first release.
 
 Each entry requires `id`, `name`, `description`, `repository`, `addedAt`, and `platforms`.
-Optional fields are `installUrl`, `updatedAt`, `version`, `author`, `image`, `androidApkUrl`, and `tags`.
-`installUrl` should point to a built `.player-plugin`; a GitHub directory must contain
-`plugin.player-plugin`. A source manifest alone is insufficient. Without installUrl,
-Player uses repository. Metadata follows the [manifest rules](development.md#manifest-rules).
+Optional fields are `installUrl`, `installUrls`, `updatedAt`, `version`, `author`, `image`, `androidApkUrl`, and `tags`.
+`installUrl` points to a built `.player-plugin`; a GitHub directory must contain
+`plugin.player-plugin`. `installUrls` maps native target keys such as `linux-x86_64`
+to HTTPS packages, allowing private-runtime plugins to publish one package per target
+without exceeding the package limit. Player selects the current OS/CPU's URL.
+A source manifest alone is insufficient. Without either URL field, Player uses
+repository. Metadata follows the [manifest rules](development.md#manifest-rules).
 
 Catalog `image` links to an image file over HTTP(S), for example
 `https://raw.githubusercontent.com/NoName-Audio/player-plugins/main/soulseek/assets/soulseek.png`.
