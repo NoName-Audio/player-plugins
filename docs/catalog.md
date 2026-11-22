@@ -28,6 +28,14 @@ without exceeding the package limit. Player selects the current OS/CPU's URL.
 A source manifest alone is insufficient. Without either URL field, Player uses
 repository. Metadata follows the [manifest rules](development.md#manifest-rules).
 
+The `github-latest` tag opts an entry into stable GitHub release discovery in
+Player versions that support it. Use a public GitHub repository and publish tags
+in `vMAJOR.MINOR.PATCH` format. Desktop asset names are `<id>-<target>.player-plugin`;
+Android assets are `<id>-android-<abi>.apk`. Player takes the version and matching
+asset URLs from the same release. Keep the pinned fields as a fallback for older
+Player versions and when GitHub release metadata is unavailable; the Android
+fallback for these entries must be an ARM64 APK.
+
 Catalog `image` links to an image file over HTTP(S), for example
 `https://raw.githubusercontent.com/NoName-Audio/player-plugins/main/soulseek/assets/soulseek.png`.
 Source plugin.json uses a relative local image path. The packager embeds the file

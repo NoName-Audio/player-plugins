@@ -55,7 +55,7 @@
     {
       "id": "player.youtube",
       "name": "YouTube",
-      "description": "Search YouTube, preview and save media. The catalog APK is for ARM64 Android; other Android builds are available in the repository releases.",
+      "description": "Search YouTube, preview and save media to your library.",
       "repository": "https://github.com/NoName-Audio/player-plugin-youtube",
       "version": "1.1.4",
       "author": {
@@ -75,7 +75,7 @@
       },
       "addedAt": "2026-11-17",
       "updatedAt": "2026-11-22",
-      "tags": ["native", "music", "youtube"]
+      "tags": ["native", "music", "youtube", "github-latest"]
     }
   ]
 }
